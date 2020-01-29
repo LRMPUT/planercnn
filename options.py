@@ -38,6 +38,9 @@ def parse_args():
     parser.add_argument('--customDataFolder', dest='customDataFolder',
                         help='data folder',
                         default='test/custom', type=str)
+    parser.add_argument('--outputDataFolder', dest='outputDataFolder',
+                        help='output data folder',
+                        default='test/inference', type=str)
     parser.add_argument('--MaskRCNNPath', dest='MaskRCNNPath',
                         help='path to Mask R-CNN weights',
                         default='../mask_rcnn_coco.pth', type=str)    

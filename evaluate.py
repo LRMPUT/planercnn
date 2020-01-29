@@ -478,7 +478,7 @@ def evaluate(options):
         camera[5] = 480
         dataset = InferenceDataset(options, config, image_list=image_list, camera=camera)
     elif 'inference' in options.dataset:
-        image_list = glob.glob(options.customDataFolder + '/*.png') + glob.glob(options.customDataFolder + '/*.jpg')
+        image_list = sorted(glob.glob(options.customDataFolder + '/*.png') + glob.glob(options.customDataFolder + '/*.jpg'))
         if os.path.exists(options.customDataFolder + '/camera.txt'):
             camera = np.zeros(6)
             with open(options.customDataFolder + '/camera.txt', 'r') as f:
@@ -586,13 +586,13 @@ def evaluate(options):
                     continue
             else:
                 for c in range(len(detection_pair)):
-                    np.save(options.test_dir + '/' + str(sampleIndex % 500) + '_plane_parameters_' + str(c) + '.npy', detection_pair[c]['detection'][:, 6:9])
-                    np.save(options.test_dir + '/' + str(sampleIndex % 500) + '_plane_masks_' + str(c) + '.npy', detection_pair[c]['masks'][:, 80:560])
+                    np.save(options.test_dir + '/' + ('%04d' % (sampleIndex % 5000)) + '_plane_parameters_' + str(c) + '.npy', detection_pair[c]['detection'][:, 6:9])
+                    np.save(options.test_dir + '/' + ('%04d' % (sampleIndex % 5000)) + '_plane_masks_' + str(c) + '.npy', detection_pair[c]['masks'][:, 80:560])
                     continue
                 pass
                             
             if sampleIndex < 30 or options.debug or options.dataset != '':
-                visualizeBatchPair(options, config, input_pair, detection_pair, indexOffset=sampleIndex % 500, suffix='_' + name + options.modelType, write_ply=options.testingIndex >= 0, write_new_view=options.testingIndex >= 0 and 'occlusion' in options.suffix)
+                visualizeBatchPair(options, config, input_pair, detection_pair, indexOffset=sampleIndex % 5000, suffix='_' + name + options.modelType, write_ply=options.testingIndex >= 0, write_new_view=options.testingIndex >= 0 and 'occlusion' in options.suffix)
                 pass
             if sampleIndex >= options.numTestingImages:
                 break
@@ -622,7 +622,8 @@ if __name__ == '__main__':
     else:
         args.keyname = args.dataset
         pass
-    args.test_dir = 'test/' + args.keyname
+    # args.test_dir = 'test/' + args.keyname
+    args.test_dir = args.outputDataFolder
 
     if args.testingIndex >= 0:
         args.debug = True
