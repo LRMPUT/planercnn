@@ -114,7 +114,7 @@ def evaluatePlanesTensor(input_dict, detection_dict, printInfo=False, use_gpu=Tr
     
     if printInfo:
         print('plane statistics', correct_mask.max(-1).sum(), num_targets, num_predictions)
-        pass    
+        pass
     return APs + plane_curves[0] + pixel_curves[0]
 
 def evaluatePlaneDepth(config, input_dict, detection_dict, printInfo=False):
@@ -174,7 +174,7 @@ def evaluateMasksTensor(predMasks, gtMasks, valid_mask, printInfo=False):
     voi = H_1 + H_2 - 2 * MI
 
     IOU = intersection / torch.clamp(union, min=1)
-    SC = ((IOU.max(-1)[0] * torch.clamp(gtMasks.sum(-1).sum(-1), min=1e-4)).sum() / N + (IOU.max(0)[0] * torch.clamp(predMasks.sum(-1).sum(-1), min=1e-4)).sum() / N) / 2
+    SC = ((IOU.max(-1)[0] * torch.clamp((gtMasks * valid_mask).sum(-1).sum(-1), min=1e-4)).sum() / N + (IOU.max(0)[0] * torch.clamp((predMasks * valid_mask).sum(-1).sum(-1), min=1e-4)).sum() / N) / 2
     info = [RI, voi, SC]
     if printInfo:
         print('mask statistics', info)
@@ -227,7 +227,7 @@ def evaluateBatchDetection(options, config, input_dict, detection_dict, statisti
             print('\nmask', c)
             pass
         depth_statistics = evaluateDepths(depth_pred[valid_mask_depth].detach().cpu().numpy(), depth_gt[valid_mask_depth].detach().cpu().numpy(), printInfo=printInfo)
-        statistics[c].append(depth_statistics[:1])
+        statistics[c].append(depth_statistics[:5])
         continue
 
     statistics[1].append([0, ])    
@@ -264,7 +264,15 @@ def evaluateBatchDetection(options, config, input_dict, detection_dict, statisti
     return
 
 def printStatisticsDetection(options, statistics):
-    with open('logs/global.txt', 'a') as f:
+    if not os.path.exists('logs'):
+        os.system("mkdir -p logs")
+        pass    
+    if not os.path.exists('logs/global.txt'):
+        open_type = 'w'
+    else:
+        open_type = 'a'
+        pass
+    with open('logs/global.txt', open_type) as f:
         values = np.array(statistics[0]).mean(0).tolist() + np.array(statistics[1]).mean(0).tolist() + np.array(statistics[2]).mean(0).tolist()
 
         if len(statistics[3]) > 0:
