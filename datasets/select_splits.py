@@ -34,7 +34,7 @@ def select_split(inputdir, split, frame_gap, num_samples):
             cnt += 1
 
     invalid_scenes_dict = {}
-    with open(inputdir + '/invalid_indices_' + split + '.txt', 'r') as f:
+    with open(inputdir + '/invalid_indices_' + split + '_old.txt', 'r') as f:
         for line in f:
             tokens = line.split(' ')
             if len(tokens) == 3:
@@ -95,6 +95,16 @@ def select_split(inputdir, split, frame_gap, num_samples):
     return view_list_samp, list(view_set_unpack), new_invalid_indices
 
 
+def save_split(inputdir, split, unpack, inv_ind):
+    with open(inputdir + '/ScanNet/Tasks/Benchmark/unpack_' + split + '.txt', 'w') as f:
+        for view in unpack:
+            f.write(view[0] + ' ' + str(view[1]) + '\n')
+
+    with open(inputdir + '/invalid_indices_' + split + '.txt', 'w') as f:
+        for idx in inv_ind:
+            f.write('%d %d %d\n' % (0, idx[0], idx[1]))
+
+
 def main():
     parser = argparse.ArgumentParser(description='Export images from rosbag.')
     parser.add_argument('inputdir',
@@ -104,6 +114,8 @@ def main():
 
     args = parser.parse_args()
 
+    random.seed(7)
+
     if args.verbose:
         print("Reading folder: " + args.inputdir)
 
@@ -112,6 +124,9 @@ def main():
 
     [test_split, test_unpack, test_inv_ind] = select_split(args.inputdir, 'test', 50, 10000)
     print('number of testing images = %d, to unpack = %d, inv ind = %d' % (len(test_split), len(test_unpack), len(test_inv_ind)))
+
+    save_split(args.inputdir, 'train', train_unpack, train_inv_ind)
+    save_split(args.inputdir, 'test', test_unpack, test_inv_ind)
 
 
 if __name__ == "__main__":
