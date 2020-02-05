@@ -51,7 +51,9 @@ def select_split(inputdir, split, frame_gap, num_samples):
         invalid_views = {}
         if scene_id in invalid_scenes_dict:
             invalid_views = invalid_scenes_dict[scene_id]
-        num_images = len(os.listdir(os.path.join(inputdir, 'scans', scene_id, 'annotation', 'segmentation')))
+        with open(os.path.join(inputdir, 'scans', scene_id, 'num_frames')) as f:
+            num_images = int(f.readline())
+        # num_images = len(os.listdir(os.path.join(inputdir, 'scans', scene_id, 'annotation', 'segmentation')))
         cur_view_list = [(scene_id, idx) for idx in range(num_images) if idx not in invalid_views]
         if len(cur_view_list) + len(invalid_views) != num_images:
             # print('%d + %d != %d' % (len(cur_view_list), len(invalid_views),  num_images))
