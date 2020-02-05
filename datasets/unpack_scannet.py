@@ -69,13 +69,13 @@ def main():
             #                         cwd=os.path.join(args.inputdir, 'scans', scene_id))
             print(' '.join(['executing:', 'python',
                                      args.scriptpath,
-                                     '--filename=scans/' + scene_id + '.sens',
+                                     '--filename=' + scene_id + '.sens',
                                      '--output_path=.',
                                      '--export_num_frames']))
             print('in scene_id: ' + os.path.join(args.inputdir, 'scans', scene_id))
             proc = subprocess.Popen(['python',
                                      args.scriptpath,
-                                     '--filename=scans/' + scene_id + '.sens',
+                                     '--filename=' + scene_id + '.sens',
                                      '--output_path=.',
                                      '--export_num_frames'],
                                     cwd=os.path.join(args.inputdir, 'scans', scene_id))
