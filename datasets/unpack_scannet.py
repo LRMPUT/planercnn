@@ -108,10 +108,15 @@ def main():
                                              'frame-%06d.pose.txt' % frame_idx)
                     # print('deleting ' + color_image_path)
                     os.remove(color_image_path)
+                    # create empty file to not destroy frame indexing
+                    open(color_image_path, 'w').close()
+
                     # print('deleting ' + depth_image_path)
                     os.remove(depth_image_path)
+                    open(depth_image_path, 'w').close()
+
                     # print('deleting ' + pose_path)
-                    os.remove(pose_path)
+                    # os.remove(pose_path)
         else:
             print('skipping ' + 'scans/' + scene_id)
             # print('removing ' + os.path.join(args.inputdir, 'scans', scene_id, 'frames'))

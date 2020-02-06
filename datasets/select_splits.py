@@ -127,8 +127,8 @@ def main():
     [test_split, test_unpack, test_inv_ind] = select_split(args.inputdir, 'test', 50, 10000)
     print('number of testing images = %d, to unpack = %d, inv ind = %d' % (len(test_split), len(test_unpack), len(test_inv_ind)))
 
-    save_split(args.inputdir, 'train', train_unpack, train_inv_ind)
-    save_split(args.inputdir, 'test', test_unpack, test_inv_ind)
+    # save_split(args.inputdir, 'train', train_unpack, train_inv_ind)
+    # save_split(args.inputdir, 'test', test_unpack, test_inv_ind)
 
 
 if __name__ == "__main__":

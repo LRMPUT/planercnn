@@ -78,14 +78,15 @@ class ScanNetScene():
                     continue
                 pass
             self.depthShift = 1000.0
-            self.imagePaths = [scenePath + '/frames/color/' + str(imageIndex) + '.jpg' for imageIndex in range(self.numImages - 1)]
+            # self.imagePaths = [scenePath + '/frames/color/' + str(imageIndex) + '.jpg' for imageIndex in range(self.numImages - 1)]
+            self.imagePaths = sorted(glob.glob(scenePath + '/frames/frame-*color.jpg'))
             pass
             
         self.camera[4] = self.depthWidth
         self.camera[5] = self.depthHeight
         self.planes = np.load(scenePath + '/annotation/planes.npy')
 
-        self.plane_info = np.load(scenePath + '/annotation/plane_info.npy')            
+        self.plane_info = np.load(scenePath + '/annotation/plane_info.npy', allow_pickle=True)
         if len(self.plane_info) != len(self.planes):
             print('invalid number of plane info', scenePath + '/annotation/planes.npy', scenePath + '/annotation/plane_info.npy', len(self.plane_info), len(self.planes))
             exit(1)
@@ -125,10 +126,15 @@ class ScanNetScene():
             depthPath = imagePath.replace('color.jpg', 'depth.pgm')
             posePath = imagePath.replace('color.jpg', 'pose.txt')
         else:
-            segmentationPath = imagePath.replace('frames/color/', 'annotation/segmentation/').replace('.jpg', '.png')
-            depthPath = imagePath.replace('color', 'depth').replace('.jpg', '.png')
-            posePath = imagePath.replace('color', 'pose').replace('.jpg', '.txt')
-            semanticsPath = imagePath.replace('color/', 'instance-filt/').replace('.jpg', '.png')            
+            segmentationPath = imagePath.replace('frames/', 'annotation/segmentation/').replace('frame-%06d.color.jpg' % imageIndex,
+                                                                                                '%d.png' % imageIndex)
+            depthPath = imagePath.replace('color.jpg', 'depth.pgm')
+            posePath = imagePath.replace('color.jpg', 'pose.txt')
+
+            # segmentationPath = imagePath.replace('frames/color/', 'annotation/segmentation/').replace('.jpg', '.png')
+            # depthPath = imagePath.replace('color', 'depth').replace('.jpg', '.png')
+            # posePath = imagePath.replace('color', 'pose').replace('.jpg', '.txt')
+            # semanticsPath = imagePath.replace('color/', 'instance-filt/').replace('.jpg', '.png')
             pass
 
         try:

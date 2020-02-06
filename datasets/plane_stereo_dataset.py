@@ -58,8 +58,9 @@ class PlaneDataset(PlaneDatasetSingle):
                 imageIndex_2 = imageIndex - self.options.frameGap
                 pass
 
-            if (sceneIndex * 10000 + imageIndex_2) in self.invalid_indices:
-                continue
+            # disabled because of the way samples were drawn
+            # if (sceneIndex * 10000 + imageIndex_2) in self.invalid_indices:
+            #     continue
             
             try:
                 image_1, planes_1, plane_info_1, segmentation_1, depth_1, camera_1, extrinsics_1, semantics_1 = scene[imageIndex]                
