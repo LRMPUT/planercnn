@@ -11,12 +11,17 @@ import os
 from plyfile import PlyData, PlyElement
 import json
 import glob
+from utils import *
+import resource
+import pymesh
+import pickle
+from disjoint_set import DisjointSet
 
-ROOT_FOLDER = "SCANNET_ROOT_FOLDER"
+ROOT_FOLDER = "/mnt/data/datasets/JW/scenenet_rgbd/render/tmp/scenes/"
 
 numPlanes = 200
-numPlanesPerSegment = 2
-planeAreaThreshold = 10
+numPlanesPerSegment = 10
+planeAreaThreshold = 200
 numIterations = 100
 numIterationsPair = 1000
 planeDiffThreshold = 0.05
@@ -62,7 +67,7 @@ class ColorPalette:
         return self.colorMap
 
     def getColor(self, index):
-        if index >= colorMap.shape[0]:
+        if index >= self.colorMap.shape[0]:
             return np.random.randint(255, size = (3))
         else:
             return self.colorMap[index]
@@ -71,7 +76,9 @@ class ColorPalette:
 def loadClassMap():
     classMap = {}
     classLabelMap = {}
-    with open(ROOT_FOLDER[:-6] + '/scannetv2-labels.combined.tsv') as info_file:
+    wsynsetToLabel = {}
+    labelToWsynset = {}
+    with open(ROOT_FOLDER[:-8] + '/scannetv2-labels.combined.tsv') as info_file:
         line_index = 0
         for line in info_file:
             if line_index > 0:
@@ -91,11 +98,21 @@ def loadClassMap():
                 classLabelMap[key] = [nyuLabel, line_index - 1]
                 classLabelMap[key + 's'] = [nyuLabel, line_index - 1]
                 classLabelMap[key[:-1] + 'ves'] = [nyuLabel, line_index - 1]
+
+                wsynset = line[14].split('.')[0].strip()
+                labelToWsynset[key] = wsynset
                 pass
             line_index += 1
             continue
         pass
-    return classMap, classLabelMap
+    for label, wsynset in labelToWsynset.items():
+        wsynset_s = wsynset.replace('_', ' ')
+        if wsynset_s in labelToWsynset:
+            wsynsetToLabel[wsynset] = wsynset_s
+        else:
+            wsynsetToLabel[wsynset] = label
+
+    return classMap, classLabelMap, wsynsetToLabel
 
 def writePointCloudFace(filename, points, faces):
     with open(filename, 'w') as f:
@@ -147,7 +164,7 @@ def mergePlanes(points, planes, planePointIndices, planeSegments, segmentNeighbo
         planeFittingErrors.append(diff.mean())
         continue
     
-    planeList = zip(planes, planePointIndices, planeSegments, planeFittingErrors)
+    planeList = list(zip(planes, planePointIndices, planeSegments, planeFittingErrors))
     planeList = sorted(planeList, key=lambda x:x[3])
 
     while len(planeList) > 0:
@@ -243,8 +260,134 @@ def mergePlanes(points, planes, planePointIndices, planeSegments, segmentNeighbo
     return groupedPlanes, groupedPlanePointIndices, groupedPlaneSegments
 
 
-def readMesh(scene_id):
+def fix_mesh(mesh, target_len):
+    # bbox_min, bbox_max = mesh.bbox
+    # diag_len = np.linalg.norm(bbox_max - bbox_min)
+    # if detail == "normal":
+    #     target_len = diag_len * 5e-3
+    # elif detail == "high":
+    #     target_len = diag_len * 2.5e-3
+    # elif detail == "low":
+    #     target_len = diag_len * 1e-2
+    print("Target resolution: {} u".format(target_len))
 
+    count = 0
+    print("before #v: {}".format(mesh.num_vertices))
+
+    mesh1, __ = pymesh.remove_duplicated_vertices(mesh, tol=1e-6)
+    mesh2, __ = pymesh.remove_degenerated_triangles(mesh1, 100)
+    print("1 #v: {}".format(mesh2.num_vertices))
+
+    mesh3, __ = pymesh.split_long_edges(mesh2, target_len)
+    print("2 #v: {}".format(mesh3.num_vertices))
+
+    # mesh4, info = pymesh.collapse_short_edges(mesh3, 1e-6)
+    # print("3 #v: {}".format(mesh4.num_vertices))
+    # print(info)
+    # if mesh4.num_vertices == 0:
+    #     mesh4, info = pymesh.collapse_short_edges(mesh3, 1e-6)
+    #
+    # mesh5, info = pymesh.collapse_short_edges(mesh4, target_len, preserve_feature=True)
+    # print("4 #v: {}".format(mesh5.num_vertices))
+    # print(info)
+    # mesh, __ = pymesh.split_long_edges(mesh, target_len)
+    # num_vertices = mesh.num_vertices
+    # while True:
+    #     # mesh, __ = pymesh.collapse_short_edges(mesh, 1e-6)
+    #     # print("1 #v: {}".format(num_vertices))
+    #     mesh, __ = pymesh.collapse_short_edges(mesh, target_len, preserve_feature=True)
+    #     # mesh, __ = pymesh.remove_obtuse_triangles(mesh, 150.0, 100)
+    #     if mesh.num_vertices == num_vertices:
+    #         break
+    #
+    #     num_vertices = mesh.num_vertices
+    #     print("2 #v: {}".format(num_vertices))
+    #     count += 1
+    #     if count > 2:
+    #         break
+
+    # mesh = pymesh.resolve_self_intersection(mesh)
+    # mesh, __ = pymesh.remove_duplicated_faces(mesh)
+    # mesh = pymesh.compute_outer_hull(mesh)
+    # mesh6, __ = pymesh.remove_duplicated_faces(mesh5)
+    # mesh, __ = pymesh.remove_obtuse_triangles(mesh, 179.0, 5)
+    # mesh7, __ = pymesh.remove_isolated_vertices(mesh6)
+    # print("after #v: {}".format(mesh7.num_vertices))
+    return mesh3
+
+
+def addEdge(v1, v2, mesh, edges):
+    vv1 = min(v1, v2)
+    vv2 = max(v1, v2)
+    if (vv1, vv2) not in edges:
+        n1 = mesh.get_attribute('vertex_normal')[3*vv1: 3*vv1 + 3]
+        n2 = mesh.get_attribute('vertex_normal')[3*vv2: 3*vv2 + 3]
+        pd = mesh.vertices[vv2] - mesh.vertices[vv1]
+        rel_conv = np.dot(pd, n2)
+        n_dot = np.dot(n1, n2)
+        if rel_conv > 0.0:
+            w = (1 - n_dot)*(1 - n_dot)
+        else:
+            w = (1 - n_dot)
+        edges[(vv1, vv2)] = w
+
+
+def segmentMesh(mesh, k, min_size):
+    mesh.add_attribute("vertex_normal")
+    edges = {}
+    for face in mesh.faces:
+        addEdge(face[0], face[1], mesh, edges)
+        addEdge(face[0], face[2], mesh, edges)
+        addEdge(face[1], face[2], mesh, edges)
+
+    edges_sort = {k: v for k, v in sorted(edges.items(), key=lambda e: e[1])}
+    djs = DisjointSet()
+    int_diff = np.zeros([mesh.num_vertices], dtype=np.float)
+    sizes = np.ones([mesh.num_vertices], dtype=np.int)
+    for e in edges_sort.items():
+        v1 = e[0][0]
+        v2 = e[0][1]
+        w = e[1]
+        rv1 = djs.find(v1)
+        rv2 = djs.find(v2)
+        if rv1 != rv2:
+            if min(int_diff[rv1] + k/sizes[rv1], int_diff[rv2] + k/sizes[rv2]) >= w:
+                djs.union(rv1, rv2)
+                cr = djs.find(rv1)
+                sizes[cr] = sizes[rv1] + sizes[rv2]
+                int_diff[cr] = w
+
+    for e in edges_sort.items():
+        v1 = e[0][0]
+        v2 = e[0][1]
+        w = e[1]
+        rv1 = djs.find(v1)
+        rv2 = djs.find(v2)
+        if rv1 != rv2 and (sizes[rv1] < min_size or sizes[rv2] < min_size):
+            djs.union(rv1, rv2)
+            cr = djs.find(rv1)
+            sizes[cr] = sizes[rv1] + sizes[rv2]
+
+    segmentation = []
+    next_idx = 0
+    id_to_idx = {}
+    for vi in range(mesh.num_vertices):
+        rv = djs.find(vi)
+        if sizes[rv] > 2*min_size:
+            if rv not in id_to_idx:
+                id_to_idx[rv] = next_idx
+                next_idx += 1
+            idx = id_to_idx[rv]
+            segmentation.append(idx)
+        else:
+            segmentation.append(-1)
+
+    print('Found %d segments' % next_idx)
+
+    return segmentation, next_idx
+
+
+def loadMesh(scene_id):
     filename = ROOT_FOLDER + scene_id + '/' + scene_id + '.aggregation.json'
     data = json.load(open(filename, 'r'))
     aggregation = np.array(data['segGroups'])
@@ -260,9 +403,7 @@ def readMesh(scene_id):
     plydata = PlyData.read(filename)
     vertices = plydata['vertex']
     points = np.stack([vertices['x'], vertices['y'], vertices['z']], axis=1)
-    faces = np.array(plydata['face']['vertex_indices'])
-    
-    semanticSegmentation = vertices['label']
+    faces = np.stack(plydata['face']['vertex_indices'])
 
     if high_res:
         filename = ROOT_FOLDER + scene_id + '/' + scene_id + '_vh_clean.segs.json'
@@ -275,7 +416,7 @@ def readMesh(scene_id):
 
     groupSegments = []
     groupLabels = []
-    for segmentIndex in xrange(len(aggregation)):
+    for segmentIndex in range(len(aggregation)):
         groupSegments.append(aggregation[segmentIndex]['segments'])
         groupLabels.append(aggregation[segmentIndex]['label'])
         continue
@@ -298,12 +439,67 @@ def readMesh(scene_id):
         groupLabels.append('unannotated')
         continue
 
+    npoints = np.zeros([0, 3], dtype=points.dtype)
+    nfaces = np.zeros([0, 3], dtype=faces.dtype)
+    nsegmentation = np.zeros([0], dtype=segmentation.dtype)
+    ngroupSegments = []
+    next_segment_id = 0
+    for gi, seg_idxs in enumerate(groupSegments):
+        point_idxs = [idx for idx in range(len(points)) if segmentation[idx] in seg_idxs]
+        face_idx = [idx for idx in range(len(faces)) if segmentation[faces[idx][0]] in seg_idxs and
+                                                        segmentation[faces[idx][1]] in seg_idxs and
+                                                        segmentation[faces[idx][2]] in seg_idxs]
+        mesh = pymesh.form_mesh(points, faces[face_idx])
+        print('\nmesh %d, label %s' % (gi, groupLabels[gi]))
+        mesh = fix_mesh(mesh, 0.05)
+        # pymesh.save_mesh(ROOT_FOLDER + scene_id + '/' + scene_id + '_' + str(gi) + '.ply', mesh)
+
+        cur_segmentation, num_segments = segmentMesh(mesh, 10, 50)
+
+        colorMap = ColorPalette(num_segments).getColorMap()
+        colors = colorMap[cur_segmentation]
+        writePointCloudFace('test/segments_%02d.ply' % gi, np.concatenate([mesh.vertices, colors], axis=-1), mesh.faces)
+
+        start_idx = npoints.shape[0]
+
+        npoints = np.vstack([npoints, mesh.vertices])
+        nfaces = np.vstack([nfaces, mesh.faces + start_idx])
+        nsegmentation = np.concatenate([nsegmentation, next_segment_id + np.array(cur_segmentation)])
+        ngroupSegments.append(range(next_segment_id, next_segment_id + num_segments))
+
+        next_segment_id += num_segments
+
+    points = npoints
+    faces = nfaces
+    segmentation = nsegmentation
+    groupSegments = ngroupSegments
+
+    return points, faces, segmentation, groupSegments, groupLabels
+
+
+def readMesh(scene_id):
+    # points, faces, segmentation, groupSegments, groupLabels = loadMesh(scene_id)
+    # with open('mesh.p', 'wb') as pickle_file:
+    #     pickle.dump([points, faces, segmentation, groupSegments, groupLabels], pickle_file)
+
+    with open('mesh_in.p', 'rb') as pickle_file:
+        points, faces, segmentation, groupSegments, groupLabels = pickle.load(pickle_file)
+
+    mesh = pymesh.form_mesh(points, faces)
+    pymesh.save_mesh(ROOT_FOLDER + scene_id + '/' + scene_id + '_cleaned.ply', mesh)
+
+    segmentToVertIdxs = {}
+    for vi, s in enumerate(segmentation):
+        if s not in segmentToVertIdxs:
+            segmentToVertIdxs[s] = []
+        segmentToVertIdxs[s].append(vi)
+
     numGroups = len(groupSegments)
     numPoints = segmentation.shape[0]    
     numPlanes = 1000
 
     segmentEdges = []
-    for faceIndex in xrange(faces.shape[0]):
+    for faceIndex in range(faces.shape[0]):
         face = faces[faceIndex]
         segment_1 = segmentation[face[0]]
         segment_2 = segmentation[face[1]]
@@ -322,7 +518,7 @@ def readMesh(scene_id):
         continue
     segmentEdges = list(set(segmentEdges))
     
-    labelNumPlanes = {'wall': [1, 3], 
+    labelNumPlanes = {'wall': [1, 5],
                       'floor': [1, 1],
                       'cabinet': [0, 5],
                       'bed': [0, 5],
@@ -362,6 +558,7 @@ def readMesh(scene_id):
                       'lamp': [0, 1],
                       'bathtub': [0, 5],
                       'bag': [0, 1],
+                      'courtain': [0, 5],
                       'otherprop': [0, 5],
                       'otherstructure': [0, 5],
                       'otherfurniture': [0, 5],                      
@@ -372,9 +569,18 @@ def readMesh(scene_id):
     nonPlanarGroupLabels = {label: True for label in nonPlanarGroupLabels}
     
     verticalLabels = ['wall', 'door', 'cabinet']
-    classMap, classLabelMap = loadClassMap()
+    classMap, classLabelMap, wsynsetToLabel = loadClassMap()
     classMap['unannotated'] = 'unannotated'
     classLabelMap['unannotated'] = [max([index for index, label in classLabelMap.values()]) + 1, 41]
+    newGroupLabels = []
+    for label in groupLabels:
+        if label in wsynsetToLabel:
+            label = wsynsetToLabel[label]
+        else:
+            label = 'unannotated'
+        newGroupLabels.append(label)
+    groupLabels = newGroupLabels
+
     allXYZ = points.reshape(-1, 3)
 
     segmentNeighbors = {}
@@ -395,7 +601,8 @@ def readMesh(scene_id):
 
     debug = True
     debugIndex = -1
-    
+
+    numPlanes = 0
     for groupIndex, group in enumerate(groupSegments):
         if debugIndex != -1 and groupIndex != debugIndex:
             continue
@@ -411,11 +618,15 @@ def readMesh(scene_id):
             pass
 
         if maxNumPlanes == 0:
-            pointMasks = []
+            # pointMasks = []
+            # for segmentIndex in group:
+            #     pointMasks.append(segmentation == segmentIndex)
+            #     continue
+            # pointIndices = np.any(np.stack(pointMasks, 0), 0).nonzero()[0]
+            pointIndices = set()
             for segmentIndex in group:
-                pointMasks.append(segmentation == segmentIndex)
-                continue
-            pointIndices = np.any(np.stack(pointMasks, 0), 0).nonzero()[0]
+                pointIndices.update(segmentToVertIdxs[segmentIndex])
+            pointIndices = list(pointIndices)
             groupPlanes = [[np.zeros(3), pointIndices, []]]
             planeGroups.append(groupPlanes)
             continue
@@ -572,12 +783,16 @@ def readMesh(scene_id):
                 continue
             groupNeighbors.append(neighborPlaneIndices)
             continue
-        groupPlanes = zip(groupPlanes, groupPlanePointIndices, groupNeighbors)            
-        planeGroups.append(groupPlanes)
+        groupPlanesZip = list(zip(groupPlanes, groupPlanePointIndices, groupNeighbors))
+        planeGroups.append(groupPlanesZip)
+        # numPlanes += len(groupPlanes)
         continue
     
     if debug:
-        colorMap = ColorPalette(segmentation.max() + 2).getColorMap()
+        numPlanes = sum([len(list(group)) for group in planeGroups])
+        numSegments = len(np.unique(segmentation))
+        colorMap = ColorPalette(max(numPlanes, numSegments)).getColorMap()
+        # colorMap = ColorPalette(segmentation.max()).getColorMap()
         colorMap[-1] = 0
         colorMap[-2] = 255
         annotationFolder = 'test/'
@@ -589,21 +804,20 @@ def readMesh(scene_id):
         annotationFolder = ROOT_FOLDER + scene_id + '/annotation/'
         pass
 
-
     if debug:
         colors = colorMap[segmentation]
         writePointCloudFace(annotationFolder + '/segments.ply', np.concatenate([points, colors], axis=-1), faces)
 
-        groupedSegmentation = np.full(segmentation.shape, fill_value=-1)
-        for segmentIndex in xrange(len(aggregation)):
-            indices = aggregation[segmentIndex]['segments']
-            for index in indices:
-                groupedSegmentation[segmentation == index] = segmentIndex
-                continue
-            continue
-        groupedSegmentation = groupedSegmentation.astype(np.int32)
-        colors = colorMap[groupedSegmentation]
-        writePointCloudFace(annotationFolder + '/groups.ply', np.concatenate([points, colors], axis=-1), faces)
+        # groupedSegmentation = np.full(segmentation.shape, fill_value=-1)
+        # for segmentIndex in range(len(aggregation)):
+        #     indices = aggregation[segmentIndex]['segments']
+        #     for index in indices:
+        #         groupedSegmentation[segmentation == index] = segmentIndex
+        #         continue
+        #     continue
+        # groupedSegmentation = groupedSegmentation.astype(np.int32)
+        # colors = colorMap[groupedSegmentation]
+        # writePointCloudFace(annotationFolder + '/groups.ply', np.concatenate([points, colors], axis=-1), faces)
         pass
 
     planes = []
@@ -611,6 +825,9 @@ def readMesh(scene_id):
     planeInfo = []
     structureIndex = 0
     for index, group in enumerate(planeGroups):
+        if len(group) == 0:
+            continue
+
         groupPlanes, groupPlanePointIndices, groupNeighbors = zip(*group)
 
         diag = np.diag(np.ones(len(groupNeighbors)))
@@ -710,7 +927,7 @@ def readMesh(scene_id):
     planes *= pow(planesD, 2)
     
     removeIndices = []
-    for faceIndex in xrange(faces.shape[0]):
+    for faceIndex in range(faces.shape[0]):
         face = faces[faceIndex]
         segment_1 = planeSegmentation[face[0]]
         segment_2 = planeSegmentation[face[1]]
@@ -719,8 +936,9 @@ def readMesh(scene_id):
             removeIndices.append(faceIndex)
             pass
         continue
-    faces = np.delete(faces, removeIndices)
-    colors = colorMap[planeSegmentation]    
+    faces = np.delete(faces, removeIndices, axis=0)
+    colors = colorMap[planeSegmentation]
+    # colors = np.tile([[255, 0, 0]], [colors.shape[0], 1])
     writePointCloudFace(annotationFolder + '/planes.ply', np.concatenate([points, colors], axis=-1), faces)
 
     if debug:
@@ -734,6 +952,8 @@ def readMesh(scene_id):
 
   
 if __name__=='__main__':
+    soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+    resource.setrlimit(resource.RLIMIT_AS, (4 * 1024 * 1024 * 1024, hard))
 
     scene_ids = os.listdir(ROOT_FOLDER)
     scene_ids = scene_ids
@@ -749,14 +969,14 @@ if __name__=='__main__':
             os.system('mkdir -p ' + ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation')
             pass
         if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/frames'):
-            cmd = 'ScanNet/SensReader/sens ' + ROOT_FOLDER + '/' + scene_id + '/' + scene_id + '.sens ' + ROOT_FOLDER + '/' + scene_id + '/frames/'
-            os.system(cmd)
+            # cmd = 'ScanNet/SensReader/sens ' + ROOT_FOLDER + '/' + scene_id + '/' + scene_id + '.sens ' + ROOT_FOLDER + '/' + scene_id + '/frames/'
+            # os.system(cmd)
             pass
         
         print(index, scene_id)
         if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/' + scene_id + '.aggregation.json'):
-            print('download')
-            download_release([scene_id], ROOT_FOLDER, FILETYPES, use_v1_sens=True)
+            # print('download')
+            # download_release([scene_id], ROOT_FOLDER, FILETYPES, use_v1_sens=True)
             pass
         
         if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/annotation/planes.ply'):
@@ -765,7 +985,7 @@ if __name__=='__main__':
             pass
 
         if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation/*.png')) < len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose/*.txt')):
-            cmd = './Renderer/Renderer --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
-            os.system(cmd)
+            # cmd = './Renderer/Renderer --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
+            # os.system(cmd)
             pass
         continue
