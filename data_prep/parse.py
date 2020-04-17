@@ -16,12 +16,16 @@ import resource
 import pymesh
 import pickle
 from disjoint_set import DisjointSet
+# from skimage import measure
+# import trimesh
+# import trimesh.voxel.creation
+# import trimesh.remesh
 
 ROOT_FOLDER = "/mnt/data/datasets/JW/scenenet_rgbd/render/tmp/scenes/"
 
 numPlanes = 200
-numPlanesPerSegment = 10
-planeAreaThreshold = 200
+numPlanesPerSegment = 3
+planeAreaThreshold = 500
 numIterations = 100
 numIterationsPair = 1000
 planeDiffThreshold = 0.05
@@ -274,21 +278,24 @@ def fix_mesh(mesh, target_len):
     count = 0
     print("before #v: {}".format(mesh.num_vertices))
 
-    mesh1, __ = pymesh.remove_duplicated_vertices(mesh, tol=1e-6)
-    mesh2, __ = pymesh.remove_degenerated_triangles(mesh1, 100)
-    print("1 #v: {}".format(mesh2.num_vertices))
+    mesh, __ = pymesh.remove_duplicated_vertices(mesh, tol=1e-6)
+    mesh, __ = pymesh.remove_duplicated_faces(mesh)
+    print("0 #v: {}".format(mesh.num_vertices))
+    mesh = pymesh.compute_outer_hull(mesh)
+    mesh, __ = pymesh.remove_degenerated_triangles(mesh, 100)
+    print("1 #v: {}".format(mesh.num_vertices))
 
-    mesh3, __ = pymesh.split_long_edges(mesh2, target_len)
-    print("2 #v: {}".format(mesh3.num_vertices))
+    mesh, __ = pymesh.split_long_edges(mesh, target_len)
+    print("2 #v: {}".format(mesh.num_vertices))
 
-    # mesh4, info = pymesh.collapse_short_edges(mesh3, 1e-6)
-    # print("3 #v: {}".format(mesh4.num_vertices))
+    # mesh, info = pymesh.collapse_short_edges(mesh, 1e-6)
+    # print("3 #v: {}".format(mesh.num_vertices))
     # print(info)
     # if mesh4.num_vertices == 0:
     #     mesh4, info = pymesh.collapse_short_edges(mesh3, 1e-6)
     #
-    # mesh5, info = pymesh.collapse_short_edges(mesh4, target_len, preserve_feature=True)
-    # print("4 #v: {}".format(mesh5.num_vertices))
+    # mesh, info = pymesh.collapse_short_edges(mesh, target_len, preserve_feature=True)
+    # print("4 #v: {}".format(mesh.num_vertices))
     # print(info)
     # mesh, __ = pymesh.split_long_edges(mesh, target_len)
     # num_vertices = mesh.num_vertices
@@ -312,8 +319,35 @@ def fix_mesh(mesh, target_len):
     # mesh6, __ = pymesh.remove_duplicated_faces(mesh5)
     # mesh, __ = pymesh.remove_obtuse_triangles(mesh, 179.0, 5)
     # mesh7, __ = pymesh.remove_isolated_vertices(mesh6)
-    # print("after #v: {}".format(mesh7.num_vertices))
-    return mesh3
+    print("after #v: {}".format(mesh.num_vertices))
+    return mesh
+
+
+def fix_mesh2(mesh, target_len):
+    grid = pymesh.VoxelGrid(0.5*target_len)
+    grid.insert_mesh(mesh)
+    grid.create_grid()
+    # grid.dilate(2)
+    # grid.erode(2)
+    # vertices, faces, normals, values = measure.marching_cubes_classic(grid.raw_grid., spacing=(0.5*target_len,
+    #                                                                                           0.5*target_len,
+    #                                                                                           0.5*target_len))
+    # vox_mesh = pymesh.form_mesh(vertices, faces)
+    vox_mesh = pymesh.quad_to_tri(grid.mesh)
+    new_mesh, info = pymesh.collapse_short_edges(vox_mesh, target_len, preserve_feature=True)
+    # new_mesh, info = pymesh.collapse_short_edges(vox_mesh, target_len)
+
+    return new_mesh
+
+
+# def fix_mesh3(mesh, target_len):
+#     grid = trimesh.voxel.creation.voxelize(mesh, 0.5 * target_len)
+#
+#     vox_mesh = grid.marching_cubes
+#
+#     new_vertices, new_faces = trimesh.remesh.subdivide_to_size(vox_mesh.vertices, vox_mesh.faces, target_len)
+#
+#     return pymesh.form_mesh(new_vertices, new_faces)
 
 
 def addEdge(v1, v2, mesh, edges):
@@ -326,7 +360,8 @@ def addEdge(v1, v2, mesh, edges):
         rel_conv = np.dot(pd, n2)
         n_dot = np.dot(n1, n2)
         if rel_conv > 0.0:
-            w = (1 - n_dot)*(1 - n_dot)
+            # w = (1 - n_dot)*(1 - n_dot)
+            w = (1 - n_dot)
         else:
             w = (1 - n_dot)
         edges[(vv1, vv2)] = w
@@ -446,12 +481,26 @@ def loadMesh(scene_id):
     next_segment_id = 0
     for gi, seg_idxs in enumerate(groupSegments):
         point_idxs = [idx for idx in range(len(points)) if segmentation[idx] in seg_idxs]
-        face_idx = [idx for idx in range(len(faces)) if segmentation[faces[idx][0]] in seg_idxs and
+        face_idxs = [idx for idx in range(len(faces)) if segmentation[faces[idx][0]] in seg_idxs and
                                                         segmentation[faces[idx][1]] in seg_idxs and
                                                         segmentation[faces[idx][2]] in seg_idxs]
-        mesh = pymesh.form_mesh(points, faces[face_idx])
+        old_idx_to_new_idx = {}
+        for new_idx, old_idx in enumerate(point_idxs):
+            old_idx_to_new_idx[old_idx] = new_idx
+
+        cur_points = points[point_idxs]
+
+        cur_faces = faces[face_idxs]
+        for face in cur_faces:
+            face[0] = old_idx_to_new_idx[face[0]]
+            face[1] = old_idx_to_new_idx[face[1]]
+            face[2] = old_idx_to_new_idx[face[2]]
+
+        mesh = pymesh.form_mesh(cur_points, cur_faces)
+        # mesh = trimesh.Trimesh(cur_points, cur_faces)
+
         print('\nmesh %d, label %s' % (gi, groupLabels[gi]))
-        mesh = fix_mesh(mesh, 0.05)
+        mesh = fix_mesh2(mesh, 0.01)
         # pymesh.save_mesh(ROOT_FOLDER + scene_id + '/' + scene_id + '_' + str(gi) + '.ply', mesh)
 
         cur_segmentation, num_segments = segmentMesh(mesh, 10, 50)
@@ -536,7 +585,7 @@ def readMesh(scene_id):
                       'shelves': [0, 5],                      
                       'curtain': [0, 0],
                       'dresser': [0, 5],
-                      'pillow': [0, 0],
+                      'pillow': [0, 2],
                       'mirror': [0, 0],
                       'entrance': [1, 1],
                       'floor mat': [1, 1],                      
@@ -582,6 +631,8 @@ def readMesh(scene_id):
     groupLabels = newGroupLabels
 
     allXYZ = points.reshape(-1, 3)
+    mesh.add_attribute("vertex_normal")
+    allNormals = np.reshape(mesh.get_attribute("vertex_normal"), [-1, 3])
 
     segmentNeighbors = {}
     for segmentEdge in segmentEdges:
@@ -617,40 +668,47 @@ def readMesh(scene_id):
             groupLabel = ''
             pass
 
+        print('\n\n', groupIndex, ', label: ', groupLabel, ', maxNumPlanes: ', maxNumPlanes)
+
         if maxNumPlanes == 0:
             # pointMasks = []
             # for segmentIndex in group:
             #     pointMasks.append(segmentation == segmentIndex)
             #     continue
             # pointIndices = np.any(np.stack(pointMasks, 0), 0).nonzero()[0]
-            pointIndices = set()
-            for segmentIndex in group:
-                pointIndices.update(segmentToVertIdxs[segmentIndex])
-            pointIndices = list(pointIndices)
-            groupPlanes = [[np.zeros(3), pointIndices, []]]
-            planeGroups.append(groupPlanes)
+            # pointIndices = set()
+            # for segmentIndex in group:
+            #     pointIndices.update(segmentToVertIdxs[segmentIndex])
+            # pointIndices = list(pointIndices)
+            # groupPlanes = [[np.zeros(3), pointIndices, []]]
+            # planeGroups.append(groupPlanes)
             continue
+
         groupPlanes = []
         groupPlanePointIndices = []
         groupPlaneSegments = []
         for segmentIndex in group:
+            print('Segment ', segmentIndex)
+
             segmentMask = segmentation == segmentIndex
             allSegmentIndices = segmentMask.nonzero()[0]
             segmentIndices = allSegmentIndices.copy()
             
             XYZ = allXYZ[segmentMask.reshape(-1)]
+            normals = allNormals[segmentMask.reshape(-1)]
             numPoints = XYZ.shape[0]
 
             for c in range(2):
                 if c == 0:
                     ## First try to fit one plane
-                    plane = fitPlane(XYZ)
-                    diff = np.abs(np.matmul(XYZ, plane) - np.ones(XYZ.shape[0])) / np.linalg.norm(plane)
-                    if diff.mean() < fittingErrorThreshold:
-                        groupPlanes.append(plane)
-                        groupPlanePointIndices.append(segmentIndices)
-                        groupPlaneSegments.append(set([segmentIndex]))                        
-                        break
+                    # plane = fitPlane(XYZ)
+                    # diff = np.abs(np.matmul(XYZ, plane) - np.ones(XYZ.shape[0])) / np.linalg.norm(plane)
+                    # if diff.mean() < fittingErrorThreshold:
+                    #     groupPlanes.append(plane)
+                    #     groupPlanePointIndices.append(segmentIndices)
+                    #     groupPlaneSegments.append(set([segmentIndex]))
+                    #     break
+                    pass
                 else:
                     ## Run ransac
                     segmentPlanes = []
@@ -668,7 +726,10 @@ def readMesh(scene_id):
                             except:
                                 continue
                             diff = np.abs(np.matmul(XYZ, plane) - np.ones(XYZ.shape[0])) / np.linalg.norm(plane)
+                            # diffNorm = np.abs(np.dot(normals, plane)/np.linalg.norm(plane))
+                            # inlierMask = (diff < planeDiffThreshold) & (diffNorm > orthogonalThreshold)
                             inlierMask = diff < planeDiffThreshold
+
                             numInliers = inlierMask.sum()
                             if numInliers > bestPlaneInfo[1]:
                                 bestPlaneInfo = [plane, numInliers, inlierMask]
@@ -680,24 +741,33 @@ def readMesh(scene_id):
                         
                         pointIndices = segmentIndices[bestPlaneInfo[2]]
                         bestPlane = fitPlane(XYZ[bestPlaneInfo[2]])
-                        
-                        segmentPlanes.append(bestPlane)                
-                        segmentPlanePointIndices.append(pointIndices)
 
-                        outlierMask = np.logical_not(bestPlaneInfo[2])
-                        segmentIndices = segmentIndices[outlierMask]
-                        XYZ = XYZ[outlierMask]
-                        continue
+                        curPoints = XYZ[bestPlaneInfo[2]]
+                        curPointsDemean = curPoints - np.mean(curPoints, axis=0)
+                        covar = curPointsDemean.transpose() @ curPointsDemean
+                        eigvals, eigvecs = np.linalg.eigh(covar)
+                        curv = eigvals[0] / np.sum(eigvals)
+
+                        if curv < 0.005:
+                            segmentPlanes.append(bestPlane)
+                            segmentPlanePointIndices.append(pointIndices)
+
+                            outlierMask = np.logical_not(bestPlaneInfo[2])
+                            segmentIndices = segmentIndices[outlierMask]
+                            XYZ = XYZ[outlierMask]
+                            normals = normals[outlierMask]
+                            continue
 
                     if sum([len(indices) for indices in segmentPlanePointIndices]) < numPoints * 0.5:
-                        groupPlanes.append(np.zeros(3))
-                        groupPlanePointIndices.append(allSegmentIndices)
-                        groupPlaneSegments.append(set([segmentIndex]))
+                        # groupPlanes.append(np.zeros(3))
+                        # groupPlanePointIndices.append(allSegmentIndices)
+                        # groupPlaneSegments.append(set([segmentIndex]))
+                        pass
                     else:
                         if len(segmentIndices) > 0:
                             ## Add remaining non-planar regions
-                            segmentPlanes.append(np.zeros(3))                
-                            segmentPlanePointIndices.append(segmentIndices)
+                            # segmentPlanes.append(np.zeros(3))
+                            # segmentPlanePointIndices.append(segmentIndices)
                             pass
                         groupPlanes += segmentPlanes
                         groupPlanePointIndices += segmentPlanePointIndices
@@ -734,8 +804,9 @@ def readMesh(scene_id):
             diff = np.abs(np.matmul(XYZ, plane) - np.ones(XYZ.shape[0])) / np.linalg.norm(plane)
 
             if groupLabel == 'floor':
-                ## Relax the constraint for the floor due to the misalignment issue in ScanNet
-                fittingErrorScale = 3
+                # Relax the constraint for the floor due to the misalignment issue in ScanNet
+                # fittingErrorScale = 3
+                fittingErrorScale = 1
             else:
                 fittingErrorScale = 1
                 pass
@@ -751,10 +822,12 @@ def readMesh(scene_id):
                 numRealPlanes = 1
                 pass
             pass
-        
+
+        print('Found ', numRealPlanes, ' real planes')
         if numRealPlanes > 1:
             groupPlanes, groupPlanePointIndices, groupPlaneSegments = mergePlanes(points, groupPlanes, groupPlanePointIndices, groupPlaneSegments, segmentNeighbors, numPlanes=(minNumPlanes, maxNumPlanes), debug=debugIndex != -1)
             pass
+        print('After merge ', len(groupPlanes))
 
         groupNeighbors = []
         for planeIndex, planeSegments in enumerate(groupPlaneSegments):
@@ -953,7 +1026,7 @@ def readMesh(scene_id):
   
 if __name__=='__main__':
     soft, hard = resource.getrlimit(resource.RLIMIT_AS)
-    resource.setrlimit(resource.RLIMIT_AS, (4 * 1024 * 1024 * 1024, hard))
+    resource.setrlimit(resource.RLIMIT_AS, (12 * 1024 * 1024 * 1024, hard))
 
     scene_ids = os.listdir(ROOT_FOLDER)
     scene_ids = scene_ids

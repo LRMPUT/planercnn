@@ -14,4 +14,5 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${OPENGL_INCLUDE_DIRS} ${GLEW_IN
 
 file(GLOB SOURCES "*.cpp")
 add_executable(Renderer main.cpp)
-target_link_libraries(Renderer opencv_core opencv_imgproc opencv_imgcodecs ${GFlags_LIBS} ${OPENGL_LIBRARIES} ${GLEW_LIBRARIES} ${GLUT_LIBRARY} ${PNG_LIBRARY} gflags OpenMeshCore OpenMeshTools)
+#target_link_libraries(Renderer opencv_core opencv_imgproc opencv_imgcodecs ${GFlags_LIBS} ${OPENGL_LIBRARIES} ${GLEW_LIBRARIES} ${GLUT_LIBRARY} ${PNG_LIBRARY} gflags OpenMeshCore OpenMeshTools)
+target_link_libraries(Renderer opencv_core opencv_imgproc opencv_imgcodecs ${GFlags_LIBS} ${OPENGL_LIBRARIES} ${GLEW_LIBRARIES} ${GLUT_LIBRARY} ${PNG_LIBRARY} gflags)
