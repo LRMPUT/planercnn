@@ -31,7 +31,7 @@ using std::ifstream;
 DEFINE_string(scene_id, "", "scene id");
 DEFINE_string(frames_id, "", "frames id");
 DEFINE_string(root_folder, "/mnt/vision/ScanNet/", "root folder");
-DEFINE_int32(frame_stride, 1, "frame stride");
+DEFINE_int32(frame_stride, 25, "frame stride");
 DEFINE_string(filename, "planes", "ply filename");
 
 void displayCB();
@@ -301,7 +301,14 @@ void drawTest(vector<GLfloat> &vertices, vector<GLfloat> &colors, vector<GLuint>
 
     glPushMatrix();
     //glTranslatef(0, 0, -cameraDistance);
-    
+
+    // for(int r = 0; r < 4; ++r){
+    //     for(int c = 0; c < 4; ++c){
+    //         cout << transformation[c][r] << " ";
+    //     }
+    //     cout << endl;
+    // }
+
     glMultMatrixf(&transformation[0][0]);
     
     //glMultTransposeMatrixf(&transformation[0][0]);
@@ -346,86 +353,86 @@ void drawTest(vector<GLfloat> &vertices, vector<GLfloat> &colors, vector<GLuint>
 ///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char **argv)
 {
-  google::ParseCommandLineFlags(&argc, &argv, true);
-  
-  frame_index = -1;
-  cameraX = 0;
-  cameraY = 0;
-  cameraZ = 0;
-  
-  scene_id = FLAGS_scene_id;
-  
-  string line;
-  stringstream ply_filename;
-  ply_filename << FLAGS_root_folder << scene_id << "/annotation/" << FLAGS_filename << ".ply";
-  ifstream ply_file(ply_filename.str());
-  string dump;
-  int num_vertices = 0;
-  int num_faces = 0;
-  float vertex;
-  int color;
-  int index;
-  int max_index = 0;
-  if (ply_file.is_open()) {
-    int line_index = 0;
-    while (getline(ply_file, line)) {
-      stringstream ss(line);
-      if (line_index == 2) {
-	ss >> dump;
-	ss >> dump;
-	ss >> num_vertices;
-      } else if (line_index == 9) {
-	ss >> dump;
-	ss >> dump;
-	ss >> num_faces;
-      } else if (line_index >= 12 && line_index < 12 + num_vertices) {
-	for (int c = 0; c < 3; c++) {
-	  ss >> vertex;
-	  verticesVec.push_back(GLfloat(vertex));
-	}
-	for (int c = 0; c < 3; c++) {
-	  ss >> color;
-	  colorsVec.push_back(GLfloat(color) / 255);
-	}
-      } else if (line_index >= 12 + num_vertices) {
-	ss >> dump;
-	for (int c = 0; c < 3; c++) {
-	  ss >> index;
-	  if (index > max_index)
-	    max_index = index;
-	  indicesVec.push_back(GLuint(index));
-	}	
-      } else if (line_index >= 12 + num_vertices + num_faces) {
-	break;
-      }
-      line_index++;
-    }
-    cout << num_vertices << " " << num_faces << " " << max_index << endl;
-  }
+    google::ParseCommandLineFlags(&argc, &argv, true);
 
-  string key;
-  double number;
-  
-  string infoFilename = FLAGS_root_folder + scene_id + "/" + scene_id + ".txt";
+    frame_index = -1;
+    cameraX = 0;
+    cameraY = 0;
+    cameraZ = 0;
 
-  ifstream scene_file(infoFilename);
-  if (scene_file.is_open()) {
-    while (getline(scene_file, line)) {
-      stringstream ss(line);
-      ss >> key >> dump >> number;
-      if (key == "depthHeight")
-  	screenHeight = number;
-      if (key == "depthWidth")
-  	screenWidth = number; 
-      if (key == "fx_depth")
-  	focalLength = number;
-      if (key == "numDepthFrames")
-  	numFrames = ceil(number / FLAGS_frame_stride);
+    scene_id = FLAGS_scene_id;
+
+    string line;
+    stringstream ply_filename;
+    ply_filename << FLAGS_root_folder << scene_id << "/annotation/" << FLAGS_filename << ".ply";
+    ifstream ply_file(ply_filename.str());
+    string dump;
+    int num_vertices = 0;
+    int num_faces = 0;
+    float vertex;
+    int color;
+    int index;
+    int max_index = 0;
+    if (ply_file.is_open()) {
+        int line_index = 0;
+        while (getline(ply_file, line)) {
+            stringstream ss(line);
+            if (line_index == 2) {
+                ss >> dump;
+                ss >> dump;
+                ss >> num_vertices;
+            } else if (line_index == 9) {
+                ss >> dump;
+                ss >> dump;
+                ss >> num_faces;
+            } else if (line_index >= 12 && line_index < 12 + num_vertices) {
+                for (int c = 0; c < 3; c++) {
+                    ss >> vertex;
+                    verticesVec.push_back(GLfloat(vertex));
+                }
+                for (int c = 0; c < 3; c++) {
+                    ss >> color;
+                    colorsVec.push_back(GLfloat(color) / 255);
+                }
+            } else if (line_index >= 12 + num_vertices) {
+                ss >> dump;
+                for (int c = 0; c < 3; c++) {
+                    ss >> index;
+                    if (index > max_index)
+                        max_index = index;
+                    indicesVec.push_back(GLuint(index));
+                }
+            } else if (line_index >= 12 + num_vertices + num_faces) {
+                break;
+            }
+            line_index++;
+        }
+        cout << num_vertices << " " << num_faces << " " << max_index << endl;
     }
-  }
-  depthShift = 1000.0;
-  
-  cout << screenHeight << '\t' << screenWidth << '\t' << focalLength << '\t' << numFrames << '\t' << endl;
+
+    string key;
+    double number;
+
+    string infoFilename = FLAGS_root_folder + scene_id + "/" + scene_id + ".txt";
+
+    ifstream scene_file(infoFilename);
+    if (scene_file.is_open()) {
+        while (getline(scene_file, line)) {
+            stringstream ss(line);
+            ss >> key >> dump >> number;
+            if (key == "depthHeight")
+                screenHeight = number;
+            if (key == "depthWidth")
+                screenWidth = number;
+            if (key == "fx_depth")
+                focalLength = number;
+            if (key == "numDepthFrames")
+                numFrames = ceil(number / FLAGS_frame_stride);
+        }
+    }
+    depthShift = 1000.0;
+
+    cout << screenHeight << '\t' << screenWidth << '\t' << focalLength << '\t' << numFrames << '\t' << endl;
 
     // check max of elements vertices and elements indices that your video card supports
     // Use these values to determine the range of glDrawRangeElements()
@@ -437,7 +444,7 @@ int main(int argc, char **argv)
     // init GLUT and GL
     initGLUT(argc, argv);
     initGL();
-  
+
     glGetIntegerv(GL_MAX_ELEMENTS_VERTICES, &maxVertices);
     glGetIntegerv(GL_MAX_ELEMENTS_INDICES, &maxIndices);
 
@@ -445,7 +452,7 @@ int main(int argc, char **argv)
     // get function pointer to glDrawRangeElements
     glDrawRangeElements = (PFNGLDRAWRANGEELEMENTSPROC)wglGetProcAddress("glDrawRangeElements");
 #endif
-    
+
     // the last GLUT call (LOOP)
     // window will be shown and display callback is triggered by events
     // NOTE: this call never return main().
@@ -656,50 +663,55 @@ void displayCB()
     glutSwapBuffers();
 
     if (frame_index < numFrames) {
-      if (frame_index >= 0) {
-	stringstream filename_ss;
-	filename_ss << FLAGS_root_folder << scene_id << "/annotation/segmentation" + FLAGS_frames_id + "/" << frame_index << ".png";
-	screenshot(filename_ss.str(), screenWidth, screenHeight);
-      }
-      frame_index += 1;
+        if (frame_index >= 0) {
+            stringstream filename_ss;
+            filename_ss << FLAGS_root_folder << scene_id << "/annotation/segmentation" + FLAGS_frames_id + "/"
+                        << std::setw(6) << std::setfill('0') << frame_index * FLAGS_frame_stride << ".png";
 
-      if (frame_index >= numFrames)
-	exit(0);
+            // cout << "Saving to file: " << filename_ss.str() << endl;
+            screenshot(filename_ss.str(), screenWidth, screenHeight);
+        }
+        frame_index += 1;
 
-      string line;
-      double number;
-      stringstream filename_ss;
-      filename_ss << FLAGS_root_folder << scene_id << "/frames" << FLAGS_frames_id << "/pose/" << frame_index << ".txt";
-	
-      ifstream pose_file(filename_ss.str());
-      if (pose_file.is_open()) {
-	for (int line_index = 0; line_index < 3; line_index++) {
-	  getline(pose_file, line);
-	  stringstream ss(line);
-	  for (int c = 0; c < 3; c++) {
-	    ss >> number;
-	    transformation[c][line_index] = GLfloat(number);
-	  }
-	  ss >> number;
-	  transformation[3][line_index] = GLfloat(number);
-	}
-      }
+        if (frame_index >= numFrames)
+            exit(0);
 
-      for (int c = 0; c < 3; c++)
-	transformation[c][3] = 0.0;
-      transformation[3][3] = 1.0;
+        string line;
+        double number;
+        stringstream filename_ss;
+        filename_ss << FLAGS_root_folder << scene_id << "/frames" << FLAGS_frames_id << "/poses_left/"
+                    << std::setw(6) << std::setfill('0') << frame_index  * FLAGS_frame_stride << ".txt";
 
-      transformation = glm::inverse(transformation);
-  
-      glm::mat4 coordinates;
-      for (int c = 0; c < 4; c++)
-	for (int d = 0; d < 4; d++)
-	  coordinates[c][d] = 0;
-      coordinates[0][0] = 1;
-      coordinates[1][1] = -1;
-      coordinates[2][2] = -1;
-      coordinates[3][3] = 1;
-      transformation = coordinates * transformation;
+        // cout << "Reading file: " << filename_ss.str() << endl;
+        ifstream pose_file(filename_ss.str());
+        if (pose_file.is_open()) {
+            for (int line_index = 0; line_index < 3; line_index++) {
+                getline(pose_file, line);
+                stringstream ss(line);
+                for (int c = 0; c < 3; c++) {
+                    ss >> number;
+                    transformation[c][line_index] = GLfloat(number);
+                }
+                ss >> number;
+                transformation[3][line_index] = GLfloat(number);
+            }
+        }
+
+        for (int c = 0; c < 3; c++)
+            transformation[c][3] = 0.0;
+        transformation[3][3] = 1.0;
+
+        transformation = glm::inverse(transformation);
+
+        glm::mat4 coordinates;
+        for (int c = 0; c < 4; c++)
+            for (int d = 0; d < 4; d++)
+                coordinates[c][d] = 0;
+        coordinates[0][0] = 1;
+        coordinates[1][1] = -1;
+        coordinates[2][2] = -1;
+        coordinates[3][3] = 1;
+        transformation = coordinates * transformation;
     }
 }
 

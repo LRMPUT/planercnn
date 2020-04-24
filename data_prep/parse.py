@@ -21,7 +21,7 @@ from disjoint_set import DisjointSet
 # import trimesh.voxel.creation
 # import trimesh.remesh
 
-ROOT_FOLDER = "/mnt/data/datasets/JW/scenenet_rgbd/render/tmp/scenes/"
+ROOT_FOLDER = "/mnt/data/datasets/JW/scenenet_rgbd/scenes/"
 
 numPlanes = 200
 numPlanesPerSegment = 3
@@ -623,7 +623,7 @@ def readMesh(scene_id):
     classLabelMap['unannotated'] = [max([index for index, label in classLabelMap.values()]) + 1, 41]
     newGroupLabels = []
     for label in groupLabels:
-        if label in wsynsetToLabel:
+        if label != '' and label in wsynsetToLabel:
             label = wsynsetToLabel[label]
         else:
             label = 'unannotated'
@@ -650,7 +650,7 @@ def readMesh(scene_id):
     planeGroups = []
     print('num groups', len(groupSegments))
 
-    debug = True
+    debug = False
     debugIndex = -1
 
     numPlanes = 0
@@ -726,9 +726,9 @@ def readMesh(scene_id):
                             except:
                                 continue
                             diff = np.abs(np.matmul(XYZ, plane) - np.ones(XYZ.shape[0])) / np.linalg.norm(plane)
-                            # diffNorm = np.abs(np.dot(normals, plane)/np.linalg.norm(plane))
-                            # inlierMask = (diff < planeDiffThreshold) & (diffNorm > orthogonalThreshold)
-                            inlierMask = diff < planeDiffThreshold
+                            diffNorm = np.abs(np.dot(normals, plane)/np.linalg.norm(plane))
+                            inlierMask = (diff < planeDiffThreshold) & (diffNorm > np.cos(np.deg2rad(30)))
+                            # inlierMask = diff < planeDiffThreshold
 
                             numInliers = inlierMask.sum()
                             if numInliers > bestPlaneInfo[1]:
@@ -965,6 +965,27 @@ def readMesh(scene_id):
         planeInfo += groupInfo
         continue
 
+    newPlanePointsIndices = []
+    for planeIndex, planePoints in enumerate(planePointIndices):
+        plane1 = planes[planeIndex]
+        XYZ = points[planePoints]
+        for planeIndex2, planePoints2 in enumerate(planePointIndices):
+            plane2 = planes[planeIndex2]
+            planes_dot = np.dot(plane1, plane2) / np.linalg.norm(plane1) / np.linalg.norm(plane2)
+            # if second plane is bigger and only if parallel
+            if planeIndex != planeIndex2 and len(planePoints2) > len(planePoints) and planes_dot > np.cos(np.deg2rad(5)):
+                diff = np.abs(np.matmul(XYZ, plane2) - np.ones(XYZ.shape[0])) / np.linalg.norm(plane2)
+                pointIndices = (diff < 0.005).nonzero()[0]
+
+                # if not empty
+                if pointIndices.size > 0:
+                    planePointsSet = set(planePoints)
+                    planePointsSet = planePointsSet.difference(pointIndices)
+                    planePoints = list(planePointsSet)
+                    pass
+        newPlanePointsIndices.append(planePoints)
+    planePointIndices = newPlanePointsIndices
+
     planeSegmentation = np.full(segmentation.shape, fill_value=-1, dtype=np.int32)
     for planeIndex, planePoints in enumerate(planePointIndices):
         planeSegmentation[planePoints] = planeIndex
@@ -1026,7 +1047,7 @@ def readMesh(scene_id):
   
 if __name__=='__main__':
     soft, hard = resource.getrlimit(resource.RLIMIT_AS)
-    resource.setrlimit(resource.RLIMIT_AS, (12 * 1024 * 1024 * 1024, hard))
+    resource.setrlimit(resource.RLIMIT_AS, (16 * 1024 * 1024 * 1024, hard))
 
     scene_ids = os.listdir(ROOT_FOLDER)
     scene_ids = scene_ids
@@ -1053,7 +1074,7 @@ if __name__=='__main__':
             pass
         
         if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/annotation/planes.ply'):
-            print('plane fitting', scene_id)
+            print('plane fitting ', scene_id)
             readMesh(scene_id)
             pass
 
