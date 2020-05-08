@@ -256,11 +256,11 @@ def mergePlanes(points, planes, planePointIndices, planeSegments, segmentNeighbo
     elif len(planeList) > maxNumPlanes:
         if debug:
             print('too many planes', len(planeList), maxNumPlanes)
-            planeList = planeList[:maxNumPlanes]
+            # planeList = planeList[:maxNumPlanes]
             pass
         else:
-            planeList = planeList[:maxNumPlanes] + [(np.zeros(3), planeInfo[1], planeInfo[2], fittingErrorThreshold) for planeInfo in planeList[maxNumPlanes:]]
-        pass
+            # planeList = planeList[:maxNumPlanes] + [(np.zeros(3), planeInfo[1], planeInfo[2], fittingErrorThreshold) for planeInfo in planeList[maxNumPlanes:]]
+            pass
 
     groupedPlanes, groupedPlanePointIndices, groupedPlaneSegments, groupedPlaneFittingErrors = zip(*planeList)
     return groupedPlanes, groupedPlanePointIndices, groupedPlaneSegments
@@ -576,8 +576,9 @@ def readMesh(scene_id):
         continue
     segmentEdges = list(set(segmentEdges))
     
-    labelNumPlanes = {'wall': [1, 5],
-                      'floor': [1, 1],
+    labelNumPlanes = {'wall': [1, 30],
+                      'walls': [1, 30],
+                      'floor': [1, 30],
                       'cabinet': [0, 5],
                       'bed': [0, 5],
                       'chair': [0, 5],
@@ -599,7 +600,7 @@ def readMesh(scene_id):
                       'entrance': [1, 1],
                       'floor mat': [1, 1],                      
                       'clothes': [0, 0],
-                      'ceiling': [0, 5],
+                      'ceiling': [0, 30],
                       'book': [0, 1],
                       'books': [0, 1],                      
                       'refridgerator': [0, 5],
@@ -659,8 +660,8 @@ def readMesh(scene_id):
     planeGroups = []
     print('num groups', len(groupSegments))
 
-    # debug = False
-    debug = True
+    debug = False
+    # debug = True
     debugIndex = -1
     debugPlaneIndex = 20
 
@@ -738,9 +739,9 @@ def readMesh(scene_id):
                             except:
                                 continue
                             diff = np.abs(np.matmul(XYZ, plane) - np.ones(XYZ.shape[0])) / np.linalg.norm(plane)
-                            diffNorm = np.abs(np.dot(normals, plane)/np.linalg.norm(plane))
-                            inlierMask = (diff < planeDiffThreshold) & (diffNorm > np.cos(np.deg2rad(30)))
-                            # inlierMask = diff < planeDiffThreshold
+                            # diffNorm = np.abs(np.dot(normals, plane)/np.linalg.norm(plane))
+                            # inlierMask = (diff < planeDiffThreshold) & (diffNorm > np.cos(np.deg2rad(30)))
+                            inlierMask = diff < planeDiffThreshold
 
                             numInliers = inlierMask.sum()
                             if numInliers > bestPlaneInfo[1]:
@@ -760,7 +761,10 @@ def readMesh(scene_id):
                         eigvals, eigvecs = np.linalg.eigh(covar)
                         curv = eigvals[0] / np.sum(eigvals)
 
-                        if curv < 0.005:
+                        meanDot = np.mean(np.abs(
+                            np.dot(normals[bestPlaneInfo[2]], bestPlane) / np.linalg.norm(bestPlane)))
+
+                        if curv < 0.005 and meanDot > np.cos(np.deg2rad(30)):
                             segmentPlanes.append(bestPlane)
                             segmentPlanePointIndices.append(pointIndices)
 
@@ -1046,9 +1050,11 @@ def readMesh(scene_id):
                                   curPointIdxToPlanePointIdx[face[1]],
                                   curPointIdxToPlanePointIdx[face[2]]])
 
-        mesh = pymesh.form_mesh(points[planePoints], np.array(curPlaneFaces))
+        mesh = None
+        if len(curPlaneFaces) > 0:
+            mesh = pymesh.form_mesh(points[planePoints], np.array(curPlaneFaces))
 
-        if len(planePoints) > 10000:
+        if debug and len(planePoints) > 10000:
             print('plane %d, %d vertices, %d faces, ' % (planeIndex, len(planePoints), len(curPlaneFaces)), planes[planeIndex])
 
         # planeFaceIdxs.append(curPlaneFaceIdxs)
@@ -1069,29 +1075,30 @@ def readMesh(scene_id):
                 continue
             planes_dot = abs(np.dot(plane1, plane2)) / planes_norm
 
-            if planeIndex == 20 and planeIndex2 == 121:
-                print('Planes %d and %d, planes_dot = %f' % (planeIndex, planeIndex2, planes_dot))
-                print(len(planePoints2), len(planePoints), np.cos(np.deg2rad(5)))
+            # if planeIndex == 20 and planeIndex2 == 121:
+            #     print('Planes %d and %d, planes_dot = %f' % (planeIndex, planeIndex2, planes_dot))
+            #     print(len(planePoints2), len(planePoints), np.cos(np.deg2rad(5)))
 
             # if second plane is bigger and only if parallel
             if planeIndex != planeIndex2 and len(planePoints2) >= len(planePoints) and planes_dot > np.cos(np.deg2rad(5)):
                 # diff = np.abs(np.matmul(XYZ, plane2) - np.ones(XYZ.shape[0])) / np.linalg.norm(plane2)
                 # pointIndices = (diff < 0.005).nonzero()[0]
 
-                sq_dists, face_idxs, closest_points = pymesh.distance_to_mesh(planeMeshes[planeIndex2], XYZ)
+                if planeMeshes[planeIndex2]:
+                    sq_dists, face_idxs, closest_points = pymesh.distance_to_mesh(planeMeshes[planeIndex2], XYZ)
 
-                mean_dist = np.mean(np.sqrt(sq_dists))
-                if mean_dist < 0.05 or (planeIndex == 20 and planeIndex2 == 121):
-                    print('Checking planes %d and %d, mean distance = %f' % (planeIndex, planeIndex2, mean_dist))
+                    mean_dist = np.mean(np.sqrt(sq_dists))
+                    # if mean_dist < 0.05 or (planeIndex == 20 and planeIndex2 == 121):
+                    #     print('Checking planes %d and %d, mean distance = %f' % (planeIndex, planeIndex2, mean_dist))
 
-                pointToMeshThresh = 0.01
-                for faceIdx in planeFaceIdxs[planeIndex]:
-                    face = faces[faceIdx]
-                    dist1 = np.sqrt(sq_dists[pointIdxToPlanePointIdx[planeIndex][face[0]]])
-                    dist2 = np.sqrt(sq_dists[pointIdxToPlanePointIdx[planeIndex][face[0]]])
-                    dist3 = np.sqrt(sq_dists[pointIdxToPlanePointIdx[planeIndex][face[0]]])
-                    if dist1 < pointToMeshThresh and dist2 < pointToMeshThresh and dist3 < pointToMeshThresh:
-                        removeIndices.append(faceIdx)
+                    pointToMeshThresh = 0.01
+                    for faceIdx in planeFaceIdxs[planeIndex]:
+                        face = faces[faceIdx]
+                        dist1 = np.sqrt(sq_dists[pointIdxToPlanePointIdx[planeIndex][face[0]]])
+                        dist2 = np.sqrt(sq_dists[pointIdxToPlanePointIdx[planeIndex][face[0]]])
+                        dist3 = np.sqrt(sq_dists[pointIdxToPlanePointIdx[planeIndex][face[0]]])
+                        if dist1 < pointToMeshThresh and dist2 < pointToMeshThresh and dist3 < pointToMeshThresh:
+                            removeIndices.append(faceIdx)
     faces = np.delete(faces, removeIndices, axis=0)
 
     # remove faces connecting different planes
@@ -1161,8 +1168,9 @@ if __name__=='__main__':
             readMesh(scene_id)
             pass
 
-        if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation/*.png')) < len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose/*.txt')):
-            # cmd = './Renderer/Renderer --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
-            # os.system(cmd)
+        if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation/*.png')) < len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_left/*.txt')):
+            print('rendering ', scene_id)
+            cmd = './Renderer/Renderer/Renderer --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
+            os.system(cmd)
             pass
         continue

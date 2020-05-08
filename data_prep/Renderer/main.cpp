@@ -682,7 +682,7 @@ void displayCB()
         string line;
         double number;
         stringstream filename_ss;
-        filename_ss << FLAGS_root_folder << scene_id << "/frames" << FLAGS_frames_id << "/poses_left/"
+        filename_ss << FLAGS_root_folder << scene_id << "/frames" << FLAGS_frames_id << "/pose_left/"
                     << std::setw(6) << std::setfill('0') << frame_index  * FLAGS_frame_stride << ".txt";
 
         cout << "Reading file: " << filename_ss.str() << endl;
