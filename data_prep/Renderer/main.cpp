@@ -645,6 +645,9 @@ void toPerspective()
 
 void displayCB()
 {
+    // cout << "Press enter to continue" << endl;
+    // getchar();
+
     // clear buffer
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
@@ -668,7 +671,7 @@ void displayCB()
             filename_ss << FLAGS_root_folder << scene_id << "/annotation/segmentation" + FLAGS_frames_id + "/"
                         << std::setw(6) << std::setfill('0') << frame_index * FLAGS_frame_stride << ".png";
 
-            // cout << "Saving to file: " << filename_ss.str() << endl;
+            cout << "Saving to file: " << filename_ss.str() << endl;
             screenshot(filename_ss.str(), screenWidth, screenHeight);
         }
         frame_index += 1;
@@ -682,7 +685,7 @@ void displayCB()
         filename_ss << FLAGS_root_folder << scene_id << "/frames" << FLAGS_frames_id << "/poses_left/"
                     << std::setw(6) << std::setfill('0') << frame_index  * FLAGS_frame_stride << ".txt";
 
-        // cout << "Reading file: " << filename_ss.str() << endl;
+        cout << "Reading file: " << filename_ss.str() << endl;
         ifstream pose_file(filename_ss.str());
         if (pose_file.is_open()) {
             for (int line_index = 0; line_index < 3; line_index++) {
