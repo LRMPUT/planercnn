@@ -32,6 +32,7 @@ planeDiffThreshold = 0.05
 fittingErrorThreshold = planeDiffThreshold
 orthogonalThreshold = np.cos(np.deg2rad(60))
 parallelThreshold = np.cos(np.deg2rad(30))
+pointToMeshThresh = 0.01
 
 
 class ColorPalette:
@@ -1028,13 +1029,18 @@ def readMesh(scene_id):
     planeMeshes = []
     pointIdxToPlanePointIdx = []
 
+    nonPlanarFaceIdxs = []
+
     for faceIndex in range(faces.shape[0]):
         face = faces[faceIndex]
         segment_1 = planeSegmentation[face[0]]
         segment_2 = planeSegmentation[face[1]]
         segment_3 = planeSegmentation[face[2]]
-        if segment_1 != -1 and segment_1 == segment_2 and segment_1 == segment_3:
-            planeFaceIdxs[segment_1].append(faceIndex)
+        if segment_1 == segment_2 and segment_1 == segment_3:
+            if segment_1 == -1 or np.linalg.norm(planes[segment_1]) < 1e-6:
+                nonPlanarFaceIdxs.append(faceIndex)
+            else:
+                planeFaceIdxs[segment_1].append(faceIndex)
 
     print('Distributed faces')
 
@@ -1063,6 +1069,21 @@ def readMesh(scene_id):
     print('precomputed planes info')
 
     removeIndices = []
+
+    print('Removing non-planar faces')
+    for planeIndex, planePoints in enumerate(planePointIndices):
+        if planeMeshes[planeIndex]:
+            sq_dists, face_idxs, closest_points = pymesh.distance_to_mesh(planeMeshes[planeIndex], points)
+            dists = np.sqrt(sq_dists)
+            # diffs = np.abs(np.matmul(points, plane) - np.ones(points.shape[0])) / np.linalg.norm(plane)
+
+            for faceIndex in nonPlanarFaceIdxs:
+                face = faces[faceIndex]
+
+                if dists[face[0]] < pointToMeshThresh and dists[face[1]] < pointToMeshThresh and dists[face[2]] < pointToMeshThresh:
+                    removeIndices.append(faceIndex)
+
+    print('Removing planar faces')
     for planeIndex, planePoints in enumerate(planePointIndices):
         plane1 = planes[planeIndex]
         XYZ = points[planePoints]
@@ -1086,17 +1107,16 @@ def readMesh(scene_id):
 
                 if planeMeshes[planeIndex2]:
                     sq_dists, face_idxs, closest_points = pymesh.distance_to_mesh(planeMeshes[planeIndex2], XYZ)
-
+                    dists = np.sqrt(sq_dists)
                     mean_dist = np.mean(np.sqrt(sq_dists))
                     # if mean_dist < 0.05 or (planeIndex == 20 and planeIndex2 == 121):
                     #     print('Checking planes %d and %d, mean distance = %f' % (planeIndex, planeIndex2, mean_dist))
 
-                    pointToMeshThresh = 0.01
                     for faceIdx in planeFaceIdxs[planeIndex]:
                         face = faces[faceIdx]
-                        dist1 = np.sqrt(sq_dists[pointIdxToPlanePointIdx[planeIndex][face[0]]])
-                        dist2 = np.sqrt(sq_dists[pointIdxToPlanePointIdx[planeIndex][face[0]]])
-                        dist3 = np.sqrt(sq_dists[pointIdxToPlanePointIdx[planeIndex][face[0]]])
+                        dist1 = dists[pointIdxToPlanePointIdx[planeIndex][face[0]]]
+                        dist2 = dists[pointIdxToPlanePointIdx[planeIndex][face[0]]]
+                        dist3 = dists[pointIdxToPlanePointIdx[planeIndex][face[0]]]
                         if dist1 < pointToMeshThresh and dist2 < pointToMeshThresh and dist3 < pointToMeshThresh:
                             removeIndices.append(faceIdx)
     faces = np.delete(faces, removeIndices, axis=0)
