@@ -16,10 +16,7 @@ import resource
 import pymesh
 import pickle
 from disjoint_set import DisjointSet
-# from skimage import measure
-# import trimesh
-# import trimesh.voxel.creation
-# import trimesh.remesh
+
 
 ROOT_FOLDER = "/mnt/data/datasets/JW/scenenet_rgbd/scenes/"
 
@@ -33,6 +30,11 @@ fittingErrorThreshold = planeDiffThreshold
 orthogonalThreshold = np.cos(np.deg2rad(60))
 parallelThreshold = np.cos(np.deg2rad(30))
 pointToMeshThresh = 0.01
+target_len_def = 0.01
+target_len_large = 0.01
+large_thresh = 10
+
+stereoSuffixes = ['left', 'right']
 
 
 class ColorPalette:
@@ -504,9 +506,9 @@ def loadMesh(scene_id):
 
         bbox_min, bbox_max = mesh.bbox
         diag_len = np.linalg.norm(bbox_max - bbox_min)
-        target_len = 0.01
-        if diag_len > 15:
-            target_len = 0.02
+        target_len = target_len_def
+        if diag_len > large_thresh:
+            target_len = target_len_large
         if groupLabels[gi] in ['floor', 'wall', 'walls', 'ceiling']:
             target_len *= 2
         print('\nmesh %d, label %s, diag_len %f, target_len %f' % (gi, groupLabels[gi], diag_len, target_len))
@@ -536,13 +538,13 @@ def loadMesh(scene_id):
     return points, faces, segmentation, groupSegments, groupLabels
 
 
-def readMesh(scene_id):
-    # points, faces, segmentation, groupSegments, groupLabels = loadMesh(scene_id)
-    # with open(ROOT_FOLDER + scene_id + '/mesh.p', 'wb') as pickle_file:
-    #     pickle.dump([points, faces, segmentation, groupSegments, groupLabels], pickle_file)
+def processMesh(scene_id):
+    points, faces, segmentation, groupSegments, groupLabels = loadMesh(scene_id)
+    with open(ROOT_FOLDER + scene_id + '/mesh.p', 'wb') as pickle_file:
+        pickle.dump([points, faces, segmentation, groupSegments, groupLabels], pickle_file)
 
-    with open(ROOT_FOLDER + scene_id + '/mesh_in.p', 'rb') as pickle_file:
-        points, faces, segmentation, groupSegments, groupLabels = pickle.load(pickle_file)
+    # with open(ROOT_FOLDER + scene_id + '/mesh_in.p', 'rb') as pickle_file:
+    #     points, faces, segmentation, groupSegments, groupLabels = pickle.load(pickle_file)
 
     mesh = pymesh.form_mesh(points, faces)
     pymesh.save_mesh(ROOT_FOLDER + scene_id + '/' + scene_id + '_cleaned.ply', mesh)
@@ -1151,13 +1153,221 @@ def readMesh(scene_id):
     np.save(annotationFolder + '/plane_info.npy', planeInfo)        
     return
 
-  
-if __name__=='__main__':
+
+def range_to_depth(range_im, K):
+    # convert depth images from range do depth values
+    K_inv = np.linalg.inv(K)
+
+    us = np.tile(np.expand_dims(range(0, range_im.shape[1]), axis=0), [range_im.shape[0], 1])
+    vs = np.tile(np.expand_dims(range(0, range_im.shape[0]), axis=1), [1, range_im.shape[1]])
+    # [h, w, 3, 1]
+    pts = np.expand_dims(np.stack([us, vs, np.ones_like(us)], axis=-1), axis=-1)
+    # [h, w, 3]
+    rays = np.squeeze(np.matmul(K_inv, pts))
+    ray_lens = np.linalg.norm(rays, axis=-1)
+    depth = rays[:, :, 2] / ray_lens * range_im
+
+    return depth
+
+
+def check_depth(depth):
+    depth_lim = 0.5 * 1000
+
+    invalid = np.count_nonzero(depth < depth_lim)
+    num_pixels = depth.shape[0] * depth.shape[1]
+
+    return invalid/num_pixels < 0.05
+
+
+def load_range(scene_id, frame_num, stereo_suffix):
+    range_file = os.path.join(ROOT_FOLDER,
+                              scene_id,
+                              'frames',
+                              'range_' + stereo_suffix,
+                              frame_num + '.png')
+    range = cv2.imread(range_file, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+    if range is None:
+        print("Could not read range file for %s %s %s" % (scene_id, frame_num, stereo_suffix))
+    return range
+
+
+def load_image(scene_id, frame_num, stereo_suffix):
+    img_file = os.path.join(ROOT_FOLDER,
+                            scene_id,
+                            'frames',
+                            'color_' + stereo_suffix,
+                            frame_num + '.jpg')
+    img = cv2.imread(img_file, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+    if img is None:
+        print("Could not read depth file for %s %s %s" % (scene_id, frame_num, stereo_suffix))
+    return img
+
+
+def load_intrinsics(scene_id, frame_num):
+    calib_file = os.path.join(ROOT_FOLDER,
+                              scene_id,
+                              scene_id + '.txt')
+    with open(calib_file, 'r') as f:
+        line = f.readline()
+        while line:
+            line_split = line.split(' = ')
+            if line_split[0] == 'fx_color':
+                fx = float(line_split[1])
+            elif line_split[0] == 'fy_color':
+                fy = float(line_split[1])
+            elif line_split[0] == 'mx_color':
+                cx = float(line_split[1])
+            elif line_split[0] == 'my_color':
+                cy = float(line_split[1])
+
+            line = f.readline()
+
+    # print(np.array([fx, fy, cx, cy]))
+    intrinsics = np.array([fx, fy, cx, cy])
+
+    return intrinsics
+
+
+def make_dir(dir):
+    if not os.path.isdir(dir):
+        #     os.makedirs(dump_dir, exist_ok=True)
+        try:
+            os.makedirs(dir)
+        except OSError:
+            if not os.path.isdir(dir):
+                raise
+
+
+def processFrame(scene_id, frame_num, invalid_list):
+
+    image = [load_image(scene_id, frame_num, stereo_prefix) for stereo_prefix in stereoSuffixes]
+    depth = [load_range(scene_id, frame_num, stereo_prefix) for stereo_prefix in stereoSuffixes]
+    intrinsics = load_intrinsics(scene_id, frame_num)
+
+    K = np.eye(3)
+    K[0, 0] = intrinsics[0]
+    K[0, 2] = intrinsics[2]
+    K[1, 1] = intrinsics[1]
+    K[1, 2] = intrinsics[3]
+
+    depth[0] = range_to_depth(depth[0], K)
+    depth[1] = range_to_depth(depth[1], K)
+
+    for stereo_idx, stereo_prefix in enumerate(stereoSuffixes):
+
+        depth_dir = os.path.join(ROOT_FOLDER,
+                        scene_id,
+                        'frames',
+                        'depth_' + stereo_prefix)
+        make_dir(depth_dir)
+
+        norm_dir = os.path.join(ROOT_FOLDER,
+                                 scene_id,
+                                 'frames',
+                                 'norm_' + stereo_prefix)
+        make_dir(norm_dir)
+
+        points3d = cv2.rgbd.depthTo3d(depth[stereo_idx], K)
+        normals_alg = cv2.rgbd.RgbdNormals_create(image[stereo_idx].shape[0], image[stereo_idx].shape[1],
+                                                  cv2.CV_32F, K)
+        norm = normals_alg.apply(points3d)
+
+        # visualization of point cloud for testing purposes
+        # pointcloud = open3d.geometry.PointCloud()
+        # pointcloud.points = open3d.Vector3dVector(np.reshape(points3d, [-1, 3]))
+        # pointcloud.colors = open3d.Vector3dVector(np.reshape(image[stereo_idx].astype(np.float32)/255.0, [-1, 3]))
+        # open3d.draw_geometries([pointcloud])
+
+        # save depth
+        dump_depth_file = os.path.join(depth_dir, frame_num + '.png')
+        cv2.imwrite(dump_depth_file, depth[stereo_idx].astype(np.uint16))
+
+        # save normals
+        dump_norm_x_file = os.path.join(norm_dir, frame_num + '_x.png')
+        dump_norm_y_file = os.path.join(norm_dir, frame_num + '_y.png')
+        dump_norm_z_file = os.path.join(norm_dir, frame_num + '_z.png')
+        cv2.imwrite(dump_norm_x_file, ((norm[:, :, 0] + 1.0) * 10000.0).astype(np.uint16))
+        cv2.imwrite(dump_norm_y_file, ((norm[:, :, 1] + 1.0) * 10000.0).astype(np.uint16))
+        cv2.imwrite(dump_norm_z_file, ((norm[:, :, 2] + 1.0) * 10000.0).astype(np.uint16))
+
+    if (not check_depth(depth[0])) or (not check_depth(depth[1])):
+        print('Excluding %s %s' % (scene_id, frame_num))
+        invalid_list[int(frame_num)] = True
+
+
+def compute_depth_and_normals(scene_id):
+    range_file_list = sorted(os.listdir(os.path.join(ROOT_FOLDER, scene_id, 'frames', 'range_left')))
+    frame_nums = [range_file.replace('.png', '') for range_file in range_file_list]
+    max_frame_num = max([int(frame_num) for frame_num in frame_nums])
+    invalid_list = [False for _ in range(max_frame_num)]
+
+    for frame_num in frame_nums:
+        processFrame(scene_id, frame_num, invalid_list)
+
+    with open(os.path.join(ROOT_FOLDER, scene_id, 'invalid_frames.txt'), 'w') as inv_file:
+        for i, is_invalid in enumerate(invalid_list):
+            if is_invalid:
+                inv_file.write('%06d\n' % i)
+
+
+def select_split(scene_ids, invalid_frames, idx, sel_scenes, sel_frames, target_num_frames):
+    cur_num_frames = 0
+    while idx < len(scene_ids) and cur_num_frames < target_num_frames:
+        scene_id = scene_ids[idx]
+
+        depth_file_list = sorted(os.listdir(os.path.join(ROOT_FOLDER, scene_id, 'frames', 'depth_left')))
+        frame_nums = [depth_file.replace('.png', '') for depth_file in depth_file_list]
+
+        sel_scenes.append(scene_id)
+        sel_frames.extend([scene_id + ' ' + frame_num for frame_num in frame_nums if frame_num not in invalid_frames[idx]])
+        cur_num_frames += len(frame_nums)
+
+        idx += 1
+
+    return idx
+
+
+def select_splits():
+    scene_ids = os.listdir(ROOT_FOLDER)
+    scene_ids = random.shuffle(scene_ids)
+
+    invalid_frames = []
+    for index, scene_id in enumerate(scene_ids):
+        with open(os.path.join(ROOT_FOLDER, scene_id, 'invalid_frames.txt'), 'r') as inv_file:
+            invalid_frames.append(inv_file.readlines())
+
+    num_train = 50000
+    num_test = 10000
+
+    idx = 0
+    train_scenes = []
+    train_frames = []
+    idx = select_split(scene_ids, invalid_frames, idx, train_scenes, train_frames, num_train)
+
+    test_scenes = []
+    test_frames = []
+    idx = select_split(scene_ids, invalid_frames, idx, test_scenes, test_frames, num_test)
+
+    print('Selected %d train frames from %d scenes, and %d test frames from %d scenes' % (len(train_frames),
+                                                                                          len(train_scenes),
+                                                                                          len(test_frames),
+                                                                                          len(test_scenes)))
+
+    with open(os.path.join(ROOT_FOLDER, '../train.txt'), 'r') as split_file:
+        for frame in train_frames:
+            split_file.write(frame + '\n')
+
+    with open(os.path.join(ROOT_FOLDER, '../test.txt'), 'r') as split_file:
+        for frame in test_frames:
+            split_file.write(frame + '\n')
+
+
+def main():
     soft, hard = resource.getrlimit(resource.RLIMIT_AS)
-    resource.setrlimit(resource.RLIMIT_AS, (32 * 1024 * 1024 * 1024, hard))
+    resource.setrlimit(resource.RLIMIT_AS, (14 * 1024 * 1024 * 1024, hard))
 
     scene_ids = os.listdir(ROOT_FOLDER)
-    scene_ids = scene_ids
+    scene_ids = sorted(scene_ids)
     print(scene_ids)
 
     np.random.seed(13)
@@ -1165,7 +1375,7 @@ if __name__=='__main__':
     for index, scene_id in enumerate(scene_ids):
         if scene_id[:5] != 'scene':
             continue
-        
+
         if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/annotation'):
             os.system('mkdir -p ' + ROOT_FOLDER + '/' + scene_id + '/annotation')
             pass
@@ -1176,21 +1386,35 @@ if __name__=='__main__':
             # cmd = 'ScanNet/SensReader/sens ' + ROOT_FOLDER + '/' + scene_id + '/' + scene_id + '.sens ' + ROOT_FOLDER + '/' + scene_id + '/frames/'
             # os.system(cmd)
             pass
-        
+
         print(index, scene_id)
         if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/' + scene_id + '.aggregation.json'):
             # print('download')
             # download_release([scene_id], ROOT_FOLDER, FILETYPES, use_v1_sens=True)
             pass
-        
+
         if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/annotation/planes.ply'):
             print('plane fitting ', scene_id)
-            readMesh(scene_id)
+            processMesh(scene_id)
             pass
 
-        if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation/*.png')) < len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_left/*.txt')):
+        if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation/*.png')) < len(
+                glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_left/*.txt')):
             print('rendering ', scene_id)
             cmd = './Renderer/Renderer/Renderer --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
             os.system(cmd)
             pass
+
+        if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/depth_left/*.png')) <\
+                len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_left/*.txt')):
+            print('computing depth and normals')
+            compute_depth_and_normals(scene_id)
+
         continue
+
+    # print('selecting splits')
+    # select_splits()
+
+
+if __name__=='__main__':
+    main()
