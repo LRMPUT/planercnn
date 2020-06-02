@@ -31,8 +31,9 @@ orthogonalThreshold = np.cos(np.deg2rad(60))
 parallelThreshold = np.cos(np.deg2rad(30))
 pointToMeshThresh = 0.01
 target_len_def = 0.01
-target_len_large = 0.01
-large_thresh = 10
+target_len_large = 0.02
+large_thresh = 50
+# very_large_thresh = 80
 
 stereoSuffixes = ['left', 'right']
 
@@ -502,16 +503,21 @@ def loadMesh(scene_id):
             face[2] = old_idx_to_new_idx[face[2]]
 
         mesh = pymesh.form_mesh(cur_points, cur_faces)
-        # mesh = trimesh.Trimesh(cur_points, cur_faces)
 
-        bbox_min, bbox_max = mesh.bbox
-        diag_len = np.linalg.norm(bbox_max - bbox_min)
+        mesh.add_attribute('face_area')
+        area = np.sum(mesh.get_attribute('face_area'))
+
+        # bbox_min, bbox_max = mesh.bbox
+        # diag_len = np.linalg.norm(bbox_max - bbox_min)
         target_len = target_len_def
-        if diag_len > large_thresh:
+        if area > 2*large_thresh:
+            target_len = 2*target_len_large
+        elif area > large_thresh:
             target_len = target_len_large
-        if groupLabels[gi] in ['floor', 'wall', 'walls', 'ceiling']:
-            target_len *= 2
-        print('\nmesh %d, label %s, diag_len %f, target_len %f' % (gi, groupLabels[gi], diag_len, target_len))
+        else:
+            target_len = target_len_def
+        print('\nmesh %d, label %s, area %f, target_len %f' % (gi, groupLabels[gi], area, target_len))
+
         mesh = fix_mesh2(mesh, target_len)
         # pymesh.save_mesh(ROOT_FOLDER + scene_id + '/' + scene_id + '_' + str(gi) + '.ply', mesh)
 
@@ -1299,7 +1305,7 @@ def compute_depth_and_normals(scene_id):
     range_file_list = sorted(os.listdir(os.path.join(ROOT_FOLDER, scene_id, 'frames', 'range_left')))
     frame_nums = [range_file.replace('.png', '') for range_file in range_file_list]
     max_frame_num = max([int(frame_num) for frame_num in frame_nums])
-    invalid_list = [False for _ in range(max_frame_num)]
+    invalid_list = [False for _ in range(max_frame_num + 1)]
 
     for frame_num in frame_nums:
         processFrame(scene_id, frame_num, invalid_list)
@@ -1329,15 +1335,15 @@ def select_split(scene_ids, invalid_frames, idx, sel_scenes, sel_frames, target_
 
 def select_splits():
     scene_ids = os.listdir(ROOT_FOLDER)
-    scene_ids = random.shuffle(scene_ids)
+    random.shuffle(scene_ids)
 
     invalid_frames = []
     for index, scene_id in enumerate(scene_ids):
         with open(os.path.join(ROOT_FOLDER, scene_id, 'invalid_frames.txt'), 'r') as inv_file:
-            invalid_frames.append(inv_file.readlines())
+            invalid_frames.append(inv_file.read().splitlines())
 
-    num_train = 50000
-    num_test = 10000
+    num_train = 1000
+    num_test = 400
 
     idx = 0
     train_scenes = []
@@ -1353,18 +1359,18 @@ def select_splits():
                                                                                           len(test_frames),
                                                                                           len(test_scenes)))
 
-    with open(os.path.join(ROOT_FOLDER, '../train.txt'), 'r') as split_file:
+    with open(os.path.join(ROOT_FOLDER, '../train.txt'), 'w') as split_file:
         for frame in train_frames:
             split_file.write(frame + '\n')
 
-    with open(os.path.join(ROOT_FOLDER, '../test.txt'), 'r') as split_file:
+    with open(os.path.join(ROOT_FOLDER, '../test.txt'), 'w') as split_file:
         for frame in test_frames:
             split_file.write(frame + '\n')
 
 
 def main():
     soft, hard = resource.getrlimit(resource.RLIMIT_AS)
-    resource.setrlimit(resource.RLIMIT_AS, (14 * 1024 * 1024 * 1024, hard))
+    resource.setrlimit(resource.RLIMIT_AS, (32 * 1024 * 1024 * 1024, hard))
 
     scene_ids = os.listdir(ROOT_FOLDER)
     scene_ids = sorted(scene_ids)
@@ -1401,7 +1407,7 @@ def main():
         if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation/*.png')) < len(
                 glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_left/*.txt')):
             print('rendering ', scene_id)
-            cmd = './Renderer/Renderer/Renderer --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
+            cmd = './data_prep/Renderer/build/Renderer --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
             os.system(cmd)
             pass
 
@@ -1412,8 +1418,8 @@ def main():
 
         continue
 
-    # print('selecting splits')
-    # select_splits()
+    print('selecting splits')
+    select_splits()
 
 
 if __name__=='__main__':
