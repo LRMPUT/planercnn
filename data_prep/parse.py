@@ -502,39 +502,40 @@ def loadMesh(scene_id):
             face[1] = old_idx_to_new_idx[face[1]]
             face[2] = old_idx_to_new_idx[face[2]]
 
-        mesh = pymesh.form_mesh(cur_points, cur_faces)
+        if len(cur_faces) > 0:
+            mesh = pymesh.form_mesh(cur_points, cur_faces)
 
-        mesh.add_attribute('face_area')
-        area = np.sum(mesh.get_attribute('face_area'))
+            mesh.add_attribute('face_area')
+            area = np.sum(mesh.get_attribute('face_area'))
 
-        # bbox_min, bbox_max = mesh.bbox
-        # diag_len = np.linalg.norm(bbox_max - bbox_min)
-        target_len = target_len_def
-        if area > 2*large_thresh:
-            target_len = 2*target_len_large
-        elif area > large_thresh:
-            target_len = target_len_large
-        else:
+            # bbox_min, bbox_max = mesh.bbox
+            # diag_len = np.linalg.norm(bbox_max - bbox_min)
             target_len = target_len_def
-        print('\nmesh %d, label %s, area %f, target_len %f' % (gi, groupLabels[gi], area, target_len))
+            if area > 2*large_thresh:
+                target_len = 2*target_len_large
+            elif area > large_thresh:
+                target_len = target_len_large
+            else:
+                target_len = target_len_def
+            print('\nmesh %d, label %s, area %f, target_len %f' % (gi, groupLabels[gi], area, target_len))
 
-        mesh = fix_mesh2(mesh, target_len)
-        # pymesh.save_mesh(ROOT_FOLDER + scene_id + '/' + scene_id + '_' + str(gi) + '.ply', mesh)
+            mesh = fix_mesh2(mesh, target_len)
+            # pymesh.save_mesh(ROOT_FOLDER + scene_id + '/' + scene_id + '_' + str(gi) + '.ply', mesh)
 
-        cur_segmentation, num_segments = segmentMesh(mesh, 10, 50)
+            cur_segmentation, num_segments = segmentMesh(mesh, 10, 50)
 
-        colorMap = ColorPalette(num_segments).getColorMap()
-        colors = colorMap[cur_segmentation]
-        writePointCloudFace('test/segments_%02d.ply' % gi, np.concatenate([mesh.vertices, colors], axis=-1), mesh.faces)
+            colorMap = ColorPalette(num_segments).getColorMap()
+            colors = colorMap[cur_segmentation]
+            writePointCloudFace('test/segments_%02d.ply' % gi, np.concatenate([mesh.vertices, colors], axis=-1), mesh.faces)
 
-        start_idx = npoints.shape[0]
+            start_idx = npoints.shape[0]
 
-        npoints = np.vstack([npoints, mesh.vertices])
-        nfaces = np.vstack([nfaces, mesh.faces + start_idx])
-        nsegmentation = np.concatenate([nsegmentation, next_segment_id + np.array(cur_segmentation)])
-        ngroupSegments.append(range(next_segment_id, next_segment_id + num_segments))
+            npoints = np.vstack([npoints, mesh.vertices])
+            nfaces = np.vstack([nfaces, mesh.faces + start_idx])
+            nsegmentation = np.concatenate([nsegmentation, next_segment_id + np.array(cur_segmentation)])
+            ngroupSegments.append(range(next_segment_id, next_segment_id + num_segments))
 
-        next_segment_id += num_segments
+            next_segment_id += num_segments
 
     points = npoints
     faces = nfaces
@@ -1323,10 +1324,11 @@ def select_split(scene_ids, invalid_frames, idx, sel_scenes, sel_frames, target_
 
         depth_file_list = sorted(os.listdir(os.path.join(ROOT_FOLDER, scene_id, 'frames', 'depth_left')))
         frame_nums = [depth_file.replace('.png', '') for depth_file in depth_file_list]
+        cur_sel_frames = [scene_id + ' ' + frame_num for frame_num in frame_nums if frame_num not in invalid_frames[idx]]
 
         sel_scenes.append(scene_id)
-        sel_frames.extend([scene_id + ' ' + frame_num for frame_num in frame_nums if frame_num not in invalid_frames[idx]])
-        cur_num_frames += len(frame_nums)
+        sel_frames.extend(cur_sel_frames)
+        cur_num_frames += len(cur_sel_frames)
 
         idx += 1
 
@@ -1342,8 +1344,8 @@ def select_splits():
         with open(os.path.join(ROOT_FOLDER, scene_id, 'invalid_frames.txt'), 'r') as inv_file:
             invalid_frames.append(inv_file.read().splitlines())
 
-    num_train = 1000
-    num_test = 400
+    num_train = 45000
+    num_test = 2000
 
     idx = 0
     train_scenes = []
@@ -1370,7 +1372,7 @@ def select_splits():
 
 def main():
     soft, hard = resource.getrlimit(resource.RLIMIT_AS)
-    resource.setrlimit(resource.RLIMIT_AS, (32 * 1024 * 1024 * 1024, hard))
+    resource.setrlimit(resource.RLIMIT_AS, (48 * 1024 * 1024 * 1024, hard))
 
     scene_ids = os.listdir(ROOT_FOLDER)
     scene_ids = sorted(scene_ids)

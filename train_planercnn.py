@@ -7,6 +7,7 @@ Licensed under the CC BY-NC-SA 4.0 license
 import torch
 from torch import optim
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 import os
 from tqdm import tqdm
@@ -18,6 +19,7 @@ from models.model import *
 from models.refinement_net import *
 from models.modules import *
 from datasets.plane_stereo_dataset import *
+from datasets.scenenet_rgbd_dataset import *
 
 from utils import *
 from visualize_utils import *
@@ -35,13 +37,16 @@ def train(options):
         pass
 
     config = PlaneConfig(options)
-    
-    dataset = PlaneDataset(options, config, split='train', random=True)
-    dataset_test = PlaneDataset(options, config, split='test', random=False)
+
+    writer = SummaryWriter('runs/train')
+
+    dataset = ScenenetRgbdDatasetSingle(options, config, split='train', random=False, writer=writer)
+    # dataset = PlaneDataset(options, config, split='train', random=True)
+    # dataset_test = PlaneDataset(options, config, split='test', random=False)
 
     print('the number of images', len(dataset))
 
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=1)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
 
     model = MaskRCNN(config)
     refine_model = RefineModel(options)
@@ -100,16 +105,16 @@ def train(options):
     if options.restore == 1 and os.path.exists(options.checkpoint_dir + '/optim.pth'):
         optimizer.load_state_dict(torch.load(options.checkpoint_dir + '/optim.pth'))        
         pass
-
     
     for epoch in range(options.numEpochs):
         epoch_losses = []
-        data_iterator = tqdm(dataloader, total=len(dataset) + 1)
+        data_iterator = tqdm(dataloader, total=len(dataset) + 1, disable=True)
 
         optimizer.zero_grad()
 
         for sampleIndex, sample in enumerate(data_iterator):
-            losses = []            
+        # for sampleIndex, sample in enumerate(dataloader):
+            losses = []
 
             input_pair = []
             detection_pair = []
