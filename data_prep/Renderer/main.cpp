@@ -310,7 +310,7 @@ void drawTest(vector<GLfloat> &vertices, vector<GLfloat> &colors, vector<GLuint>
     // }
 
     glMultMatrixf(&transformation[0][0]);
-    
+
     //glMultTransposeMatrixf(&transformation[0][0]);
     glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, &indices[0]);
 
@@ -513,7 +513,7 @@ void initGL()
     glEnable(GL_DEPTH_TEST);
     //glEnable(GL_LIGHTING);
     glEnable(GL_TEXTURE_2D);
-    glEnable(GL_CULL_FACE);
+    // glEnable(GL_CULL_FACE);
 
      // track material ambient and diffuse from surface color, call it before glEnable(GL_COLOR_MATERIAL)
     glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);

@@ -1138,7 +1138,17 @@ def processMesh(scene_id):
         segment_2 = planeSegmentation[face[1]]
         segment_3 = planeSegmentation[face[2]]
         if segment_1 != segment_2 or segment_1 != segment_3:
-            removeIndices.append(faceIndex)
+            # add non-planar triangle instead of removing
+            cur_points = points[face]
+            start_idx = len(points)
+
+            points = np.concatenate([points, cur_points], axis=0)
+            face[0] = start_idx
+            face[1] = start_idx + 1
+            face[2] = start_idx + 2
+            planeSegmentation = np.concatenate([planeSegmentation, np.array([-1, -1, -1])], axis=0)
+
+            # removeIndices.append(faceIndex)
             pass
         continue
     if debugPlaneIndex != -1:
@@ -1146,7 +1156,7 @@ def processMesh(scene_id):
         colorMap[debugPlaneIndex][1] = 0
         colorMap[debugPlaneIndex][2] = 0
 
-    faces = np.delete(faces, removeIndices, axis=0)
+    # faces = np.delete(faces, removeIndices, axis=0)
     colors = colorMap[planeSegmentation]
     # colors = np.tile([[255, 0, 0]], [colors.shape[0], 1])
     writePointCloudFace(annotationFolder + '/planes.ply', np.concatenate([points, colors], axis=-1), faces)

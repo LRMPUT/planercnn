@@ -118,7 +118,6 @@ class ScenenetRgbdScene():
         extrinsics[1] = extrinsics[2]
         extrinsics[2] = -temp
 
-        
         segmentation = cv2.imread(segmentationPath, -1).astype(np.int32)
         
         segmentation = (segmentation[:, :, 2] * 256 * 256 + segmentation[:, :, 1] * 256 + segmentation[:, :, 0]) // 100 - 1
@@ -147,17 +146,13 @@ class ScenenetRgbdScene():
             continue
 
         segmentation = newSegmentation
-        planes = np.array(newPlanes)
+        planes_global = np.array(newPlanes)
         plane_info = newPlaneInfo        
 
         image = cv2.resize(image, (depth.shape[1], depth.shape[0]))
 
-        if self.writer is not None:
-            self.writer.add_image('image', image, dataformats='HWC')
-            self.writer.add_image('depth', depth, dataformats='HW')
-
-        if len(planes) > 0:
-            planes = self.transformPlanes(extrinsics, planes)
+        if len(planes_global) > 0:
+            planes = self.transformPlanes(extrinsics, planes_global)
             segmentation, plane_depths = cleanSegmentation(image, planes, plane_info, segmentation, depth, self.camera,
                                                            planeAreaThreshold=self.options.planeAreaThreshold,
                                                            planeWidthThreshold=self.options.planeWidthThreshold,
@@ -170,7 +165,22 @@ class ScenenetRgbdScene():
             plane_mask *= (depth > 1e-4).astype(np.float32)            
             plane_area = plane_mask.sum()
             depth_error = (np.abs(plane_depth - depth) * plane_mask).sum() / max(plane_area, 1)
+
+            depth_errors = np.abs(plane_depths - depth) * masks.transpose(2, 0, 1)
+            depth_losses = np.sum(depth_errors, axis=(-2, -1)) / np.sum(masks.transpose(2, 0, 1), axis=(-2, -1))
+            depth_losses = np.sum(depth_errors, axis=(-2, -1))
+
+            depth_6 = depth[masks[:, :, 6] > 0].mean()
+
             if depth_error > 0.1:
+                if self.writer is not None:
+                    self.writer.add_image('image', image, dataformats='HWC')
+                    # up to 10 m
+                    self.writer.add_image('depth', depth / 10.0, dataformats='HW')
+                    self.writer.add_image('plane_depth', plane_depth / 10.0, dataformats='HW')
+                    self.writer.add_image('plane_mask', masks[:, :, 6], dataformats='HW')
+                    self.writer.add_image('depth_error', (np.abs(plane_depth - depth) * plane_mask), dataformats='HW')
+
                 print('depth error', depth_error)
                 planes = []
                 pass
