@@ -15,6 +15,7 @@ import sys
 import utils
 from datasets.scenenet_rgbd_scene import ScenenetRgbdScene
 
+
 class ScenenetRgbdDatasetSingle(Dataset):
     def __init__(self, options, config, split, random=True, loadNeighborImage=False, load_semantics=False, load_boundary=False, writer=None):
         self.options = options
@@ -176,7 +177,10 @@ class ScenenetRgbdDatasetSingle(Dataset):
         newPlanes = planeNormals * planeOffsets
         return newPlanes
     
-    def __getitem__(self, index):
+    def __getitem__(self, index_cam_idx):
+        index = index_cam_idx[0]
+        cam_idx = index_cam_idx[1]
+
         t = int(time.time() * 1000000)
         np.random.seed(((t & 0xff000000) >> 24) +
                        ((t & 0x00ff0000) >> 8) +
@@ -201,7 +205,7 @@ class ScenenetRgbdDatasetSingle(Dataset):
             scene = self.scenes[sceneIndex]
 
             try:
-                image, planes, plane_info, segmentation, depth, camera, extrinsics = scene[frame_num]
+                image, planes, plane_info, segmentation, depth, camera, extrinsics, semantics = scene[frame_num, cam_idx]
                 if len(planes) == 0:
                     index += 1                    
                     continue
@@ -277,7 +281,14 @@ class ScenenetRgbdDatasetSingle(Dataset):
         mask = np.stack(instance_masks, axis=2)
 
         class_ids = np.array(class_ids, dtype=np.int32)
-        image, image_metas, gt_class_ids, gt_boxes, gt_masks, gt_parameters = load_image_gt(self.config, index, image, mask, class_ids, parameters, augment=self.split == 'train')
+        image, image_metas, gt_class_ids, gt_boxes, gt_masks, gt_parameters = load_image_gt(self.config,
+                                                                                            index,
+                                                                                            image,
+                                                                                            depth,
+                                                                                            mask,
+                                                                                            class_ids,
+                                                                                            parameters,
+                                                                                            augment=self.split == 'train')
         ## RPN Targets
         rpn_match, rpn_bbox = build_rpn_targets(image.shape, self.anchors,
                                                 gt_class_ids, gt_boxes, self.config)
@@ -296,9 +307,11 @@ class ScenenetRgbdDatasetSingle(Dataset):
         image = utils.mold_image(image.astype(np.float32), self.config)
 
         depth = np.concatenate([np.zeros((80, 640)), depth, np.zeros((80, 640))], axis=0)
-        segmentation = np.concatenate([np.full((80, 640), fill_value=-1, dtype=np.int32), segmentation, np.full((80, 640), fill_value=-1, dtype=np.int32)], axis=0)        
-        
-        info = [image.transpose((2, 0, 1)).astype(np.float32), image_metas, rpn_match, rpn_bbox.astype(np.float32), gt_class_ids, gt_boxes.astype(np.float32), gt_masks.transpose((2, 0, 1)).astype(np.float32), gt_parameters, depth.astype(np.float32), segmentation, camera.astype(np.float32)]
+        segmentation = np.concatenate([np.full((80, 640), fill_value=-1, dtype=np.int32), segmentation, np.full((80, 640), fill_value=-1, dtype=np.int32)], axis=0)
+
+        info = [image.transpose((2, 0, 1)).astype(np.float32), image_metas, rpn_match, rpn_bbox.astype(np.float32),
+                gt_class_ids, gt_boxes.astype(np.float32), gt_masks.transpose((2, 0, 1)).astype(np.float32),
+                gt_parameters, depth.astype(np.float32), segmentation, camera.astype(np.float32)]
         
         if self.loadNeighborImage:
             raise ValueError('loadNeighborImage not supported')

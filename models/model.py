@@ -439,7 +439,7 @@ def pyramid_roi_align(inputs, pool_size, image_shape):
             ind = ind.cuda()
         feature_maps[i] = feature_maps[i].unsqueeze(0)  #CropAndResizeFunction needs batch dimension
         # pooled_features = CropAndResizeFunction(pool_size, pool_size, 0)(feature_maps[i], level_boxes, ind)
-        pooled_features = torchvision.ops.roi_align(feature_maps[i], level_boxes, (pool_size, pool_size))
+        pooled_features = torchvision.ops.roi_align(feature_maps[i], [level_boxes], (pool_size, pool_size))
         pooled.append(pooled_features)
 
     ## Pack pooled features into one tensor
@@ -499,7 +499,7 @@ def coordinates_roi(inputs, pool_size, image_shape):
         ind = ind.cuda()
     cooridnates = cooridnates.unsqueeze(0)  ## CropAndResizeFunction needs batch dimension
     # pooled_features = CropAndResizeFunction(pool_size, pool_size, 0)(cooridnates, boxes, ind)
-    pooled_features = torchvision.ops.roi_align(cooridnates, boxes, (pool_size, pool_size))
+    pooled_features = torchvision.ops.roi_align(cooridnates, [boxes], (pool_size, pool_size))
 
     return pooled_features
 
@@ -574,9 +574,9 @@ def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_param
     gt_boxes = gt_boxes.squeeze(0)
     gt_masks = gt_masks.squeeze(0)
     gt_parameters = gt_parameters.squeeze(0)
-    no_crowd_bool =  Variable(torch.ByteTensor(proposals.size()[0]*[True]), requires_grad=False)
-    if config.GPU_COUNT:
-        no_crowd_bool = no_crowd_bool.cuda()
+    # no_crowd_bool =  Variable(torch.ByteTensor(proposals.size()[0]*[True]), requires_grad=False)
+    # if config.GPU_COUNT:
+    #     no_crowd_bool = no_crowd_bool.cuda()
 
     ## Compute overlaps matrix [proposals, gt_boxes]
     overlaps = bbox_overlaps(proposals, gt_boxes)
@@ -640,14 +640,14 @@ def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_param
 
         if config.NUM_PARAMETER_CHANNELS > 0:
             # masks = Variable(CropAndResizeFunction(config.MASK_SHAPE[0], config.MASK_SHAPE[1], 0)(roi_masks[:, :, :, 0].contiguous().unsqueeze(1), boxes, box_ids).data, requires_grad=False).squeeze(1)
-            masks = Variable(torchvision.ops.roi_align(roi_masks[:, :, :, 0].contiguous().unsqueeze(1), boxes, (config.MASK_SHAPE[0], config.MASK_SHAPE[1])).data, requires_grad=False).squeeze(1)
+            masks = Variable(torchvision.ops.roi_align(roi_masks[:, :, :, 0].contiguous().unsqueeze(1), [boxes], (config.MASK_SHAPE[0], config.MASK_SHAPE[1])).data, requires_grad=False).squeeze(1)
             masks = torch.round(masks)
             # parameters = Variable(CropAndResizeFunction(config.MASK_SHAPE[0], config.MASK_SHAPE[1], 0)(roi_masks[:, :, :, 1].contiguous().unsqueeze(1), boxes, box_ids).data, requires_grad=False).squeeze(1)
-            parameters = Variable(torchvision.ops.roi_align(roi_masks[:, :, :, 1].contiguous().unsqueeze(1), boxes, (config.MASK_SHAPE[0], config.MASK_SHAPE[1])).data, requires_grad=False).squeeze(1)
+            parameters = Variable(torchvision.ops.roi_align(roi_masks[:, :, :, 1].contiguous().unsqueeze(1), [boxes], (config.MASK_SHAPE[0], config.MASK_SHAPE[1])).data, requires_grad=False).squeeze(1)
             masks = torch.stack([masks, parameters], dim=-1)
         else:
             # masks = Variable(CropAndResizeFunction(config.MASK_SHAPE[0], config.MASK_SHAPE[1], 0)(roi_masks.unsqueeze(1), boxes, box_ids).data, requires_grad=False).squeeze(1)
-            masks = Variable(torchvision.ops.roi_align(roi_masks.unsqueeze(1), boxes, (config.MASK_SHAPE[0], config.MASK_SHAPE[1])).data, requires_grad=False).squeeze(1)
+            masks = Variable(torchvision.ops.roi_align(roi_masks.unsqueeze(1), [boxes], (config.MASK_SHAPE[0], config.MASK_SHAPE[1])).data, requires_grad=False).squeeze(1)
             masks = torch.round(masks)
             pass
 
@@ -658,7 +658,7 @@ def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_param
 
     ## 2. Negative ROIs are those with < 0.5 with every GT box. Skip crowds.
     negative_roi_bool = roi_iou_max < 0.5
-    negative_roi_bool = negative_roi_bool & no_crowd_bool
+    # negative_roi_bool = negative_roi_bool & no_crowd_bool
     ## Negative ROIs. Add enough to maintain positive:negative ratio.
     if (negative_roi_bool > 0).sum() > 0 and positive_count>0:
         negative_indices = torch.nonzero(negative_roi_bool)[:, 0]
@@ -1924,7 +1924,7 @@ class MaskRCNN(nn.Module):
                     if self.config.GPU_COUNT:
                         box_ids = box_ids.cuda()
                     # roi_gt_masks = Variable(CropAndResizeFunction(self.config.FINAL_MASK_SHAPE[0], self.config.FINAL_MASK_SHAPE[1], 0)(roi_gt_masks.unsqueeze(1), boxes, box_ids).data, requires_grad=False)
-                    roi_gt_masks = Variable(torchvision.ops.roi_align(roi_gt_masks.unsqueeze(1), boxes, (self.config.FINAL_MASK_SHAPE[0], self.config.FINAL_MASK_SHAPE[1])).data, requires_grad=False)
+                    roi_gt_masks = Variable(torchvision.ops.roi_align(roi_gt_masks.unsqueeze(1), [boxes], (self.config.FINAL_MASK_SHAPE[0], self.config.FINAL_MASK_SHAPE[1])).data, requires_grad=False)
                     roi_gt_masks = roi_gt_masks.squeeze(1)
 
                     roi_gt_masks = torch.round(roi_gt_masks)

@@ -546,12 +546,12 @@ def loadMesh(scene_id):
 
 
 def processMesh(scene_id):
-    points, faces, segmentation, groupSegments, groupLabels = loadMesh(scene_id)
-    with open(ROOT_FOLDER + scene_id + '/mesh.p', 'wb') as pickle_file:
-        pickle.dump([points, faces, segmentation, groupSegments, groupLabels], pickle_file)
-
-    # with open(ROOT_FOLDER + scene_id + '/mesh_in.p', 'rb') as pickle_file:
-    #     points, faces, segmentation, groupSegments, groupLabels = pickle.load(pickle_file)
+    # points, faces, segmentation, groupSegments, groupLabels = loadMesh(scene_id)
+    # with open(ROOT_FOLDER + scene_id + '/mesh.p', 'wb') as pickle_file:
+    #     pickle.dump([points, faces, segmentation, groupSegments, groupLabels], pickle_file)
+    #
+    with open(ROOT_FOLDER + scene_id + '/mesh.p', 'rb') as pickle_file:
+        points, faces, segmentation, groupSegments, groupLabels = pickle.load(pickle_file)
 
     mesh = pymesh.form_mesh(points, faces)
     pymesh.save_mesh(ROOT_FOLDER + scene_id + '/' + scene_id + '_cleaned.ply', mesh)
@@ -630,17 +630,19 @@ def processMesh(scene_id):
                       'courtain': [0, 5],
                       'otherprop': [0, 5],
                       'otherstructure': [0, 5],
-                      'otherfurniture': [0, 5],                      
+                      'otherfurniture': [0, 5],
                       'unannotated': [0, 5],
                       '': [0, 0],
     }
-    nonPlanarGroupLabels = ['bicycle', 'bottle', 'water bottle']
+    nonPlanarGroupLabels = ['bicycle', 'bottle', 'water bottle', 'lightbulb']
     nonPlanarGroupLabels = {label: True for label in nonPlanarGroupLabels}
     
     verticalLabels = ['wall', 'door', 'cabinet']
     classMap, classLabelMap, wsynsetToLabel = loadClassMap()
     classMap['unannotated'] = 'unannotated'
     classLabelMap['unannotated'] = [max([index for index, label in classLabelMap.values()]) + 1, 41]
+    classLabelMap['lightbulb'] = [max([index for index, label in classLabelMap.values()]) + 2, 41]
+    wsynsetToLabel['lightbulb'] = 'lightbulb'
     newGroupLabels = []
     for label in groupLabels:
         if label != '' and label in wsynsetToLabel:

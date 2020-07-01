@@ -8,6 +8,7 @@ import numpy as np
 import glob
 import cv2
 import os
+import re
 
 from utils import *
 
@@ -18,6 +19,9 @@ class ScenenetRgbdScene():
         self.load_semantics = load_semantics
         self.load_boundary = load_boundary
         self.scannetVersion = 2
+        self.scene_id = scene_id
+
+        self.cams = ['left', 'right']
 
         self.writer = writer
 
@@ -52,8 +56,11 @@ class ScenenetRgbdScene():
             pass
         self.depthShift = 1000.0
         # self.imagePaths = [scenePath + '/frames/color/' + str(imageIndex) + '.jpg' for imageIndex in range(self.numImages - 1)]
-        self.imagePaths = sorted(glob.glob(scenePath + '/frames/color_left/*.jpg'))
-        pass
+        # self.imagePaths = sorted(glob.glob(scenePath + '/frames/color_left/*.jpg'))
+        self.frame_nums = {re.split('[\\/.]', path)[-2] for path in os.listdir(os.path.join(scenePath, 'frames', 'color_left'))}
+
+        # self.imagePaths = [[os.path.join(scenePath, 'frames', 'color_left', frame_num + '.jpg') for frame_num in self.frame_nums],
+        #                    [os.path.join(scenePath, 'frames', 'color_right', frame_num + '.jpg') for frame_num in self.frame_nums]]
             
         self.camera[4] = self.depthWidth
         self.camera[5] = self.depthHeight
@@ -66,7 +73,6 @@ class ScenenetRgbdScene():
 
         self.scenePath = scenePath
         return
-        
 
     def transformPlanes(self, transformation, planes):
         planeOffsets = np.linalg.norm(planes, axis=-1, keepdims=True)
@@ -88,13 +94,16 @@ class ScenenetRgbdScene():
         return newPlanes
 
     def __len__(self):
-        return len(self.imagePaths)
+        return len(self.frame_nums)
     
-    def __getitem__(self, frame_num):
-        imagePath = os.path.join(self.scenePath, 'frames', 'color_left', frame_num + '.jpg')
+    def __getitem__(self, frame_num_cam_idx):
+        frame_num = frame_num_cam_idx[0]
+        cam_idx = frame_num_cam_idx[1]
+
+        imagePath = os.path.join(self.scenePath, 'frames', 'color_' + self.cams[cam_idx], frame_num + '.jpg')
         image = cv2.imread(imagePath)
 
-        segmentationPath = imagePath.replace('frames/color_left/', 'annotation/segmentation/').replace('.jpg', '.png')
+        segmentationPath = imagePath.replace('frames/color_' + self.cams[cam_idx] + '/', 'annotation/segmentation/').replace('.jpg', '.png')
         depthPath = imagePath.replace('color', 'depth').replace('.jpg', '.png')
         posePath = imagePath.replace('color', 'pose').replace('.jpg', '.txt')
         semanticsPath = imagePath.replace('color/', 'instance-filt/').replace('.jpg', '.png')
@@ -166,11 +175,20 @@ class ScenenetRgbdScene():
             plane_area = plane_mask.sum()
             depth_error = (np.abs(plane_depth - depth) * plane_mask).sum() / max(plane_area, 1)
 
-            depth_errors = np.abs(plane_depths - depth) * masks.transpose(2, 0, 1)
-            depth_losses = np.sum(depth_errors, axis=(-2, -1)) / np.sum(masks.transpose(2, 0, 1), axis=(-2, -1))
-            depth_losses = np.sum(depth_errors, axis=(-2, -1))
-
-            depth_6 = depth[masks[:, :, 6] > 0].mean()
+            # depth_errors = np.abs(plane_depths - depth) * masks.transpose(2, 0, 1)
+            # depth_losses = np.sum(depth_errors, axis=(-2, -1)) / np.sum(masks.transpose(2, 0, 1), axis=(-2, -1))
+            # depth_losses = np.sum(depth_errors, axis=(-2, -1))
+            #
+            # depth_6 = depth[masks[:, :, 6] > 0].mean()
+            #
+            # if self.writer is not None and self.scene_id == 'scene0034_00':
+            #     self.writer.add_image('image', image, dataformats='HWC')
+            #     # up to 10 m
+            #     self.writer.add_image('depth', depth / 10.0, dataformats='HW')
+            #     self.writer.add_image('plane_depth', plane_depth / 10.0, dataformats='HW')
+            #     self.writer.add_image('plane_mask', masks[:, :, 6], dataformats='HW')
+            #     self.writer.add_image('depth_error', (np.abs(plane_depth - depth) * plane_mask), dataformats='HW')
+            #     pass
 
             if depth_error > 0.1:
                 if self.writer is not None:
@@ -178,8 +196,9 @@ class ScenenetRgbdScene():
                     # up to 10 m
                     self.writer.add_image('depth', depth / 10.0, dataformats='HW')
                     self.writer.add_image('plane_depth', plane_depth / 10.0, dataformats='HW')
-                    self.writer.add_image('plane_mask', masks[:, :, 6], dataformats='HW')
+                    self.writer.add_image('plane_mask', plane_mask, dataformats='HW')
                     self.writer.add_image('depth_error', (np.abs(plane_depth - depth) * plane_mask), dataformats='HW')
+                    pass
 
                 print('depth error', depth_error)
                 planes = []
