@@ -1399,29 +1399,39 @@ def main():
         if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/annotation'):
             os.system('mkdir -p ' + ROOT_FOLDER + '/' + scene_id + '/annotation')
             pass
-        if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation'):
-            os.system('mkdir -p ' + ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation')
+        if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation_left'):
+            os.system('mkdir -p ' + ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation_left')
             pass
-        if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/frames'):
+        if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation_right'):
+            os.system('mkdir -p ' + ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation_right')
+            pass
+        # if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/frames'):
             # cmd = 'ScanNet/SensReader/sens ' + ROOT_FOLDER + '/' + scene_id + '/' + scene_id + '.sens ' + ROOT_FOLDER + '/' + scene_id + '/frames/'
             # os.system(cmd)
-            pass
+            # pass
 
         print(index, scene_id)
-        if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/' + scene_id + '.aggregation.json'):
+        # if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/' + scene_id + '.aggregation.json'):
             # print('download')
             # download_release([scene_id], ROOT_FOLDER, FILETYPES, use_v1_sens=True)
-            pass
+            # pass
 
         if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/annotation/planes.ply'):
             print('plane fitting ', scene_id)
             processMesh(scene_id)
             pass
 
-        if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation/*.png')) < len(
+        if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation_left/*.png')) < len(
                 glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_left/*.txt')):
-            print('rendering ', scene_id)
-            cmd = './data_prep/Renderer/build/Renderer --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
+            print('rendering left ', scene_id)
+            cmd = './data_prep/Renderer/build/Renderer --cam_name=left --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
+            os.system(cmd)
+            pass
+
+        if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation_right/*.png')) < len(
+                glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_right/*.txt')):
+            print('rendering right ', scene_id)
+            cmd = './data_prep/Renderer/build/Renderer --cam_name=right --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
             os.system(cmd)
             pass
 

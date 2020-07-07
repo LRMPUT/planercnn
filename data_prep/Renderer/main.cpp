@@ -33,6 +33,7 @@ DEFINE_string(frames_id, "", "frames id");
 DEFINE_string(root_folder, "/mnt/vision/ScanNet/", "root folder");
 DEFINE_int32(frame_stride, 25, "frame stride");
 DEFINE_string(filename, "planes", "ply filename");
+DEFINE_string(cam_name, "left", "camera name");
 
 void displayCB();
 void reshapeCB(int w, int h);
@@ -668,7 +669,7 @@ void displayCB()
     if (frame_index < numFrames) {
         if (frame_index >= 0) {
             stringstream filename_ss;
-            filename_ss << FLAGS_root_folder << scene_id << "/annotation/segmentation" + FLAGS_frames_id + "/"
+            filename_ss << FLAGS_root_folder << scene_id << "/annotation/segmentation" + FLAGS_frames_id + FLAGS_cam_name + "/"
                         << std::setw(6) << std::setfill('0') << frame_index * FLAGS_frame_stride << ".png";
 
             cout << "Saving to file: " << filename_ss.str() << endl;
@@ -682,7 +683,7 @@ void displayCB()
         string line;
         double number;
         stringstream filename_ss;
-        filename_ss << FLAGS_root_folder << scene_id << "/frames" << FLAGS_frames_id << "/pose_left/"
+        filename_ss << FLAGS_root_folder << scene_id << "/frames" << FLAGS_frames_id << "/pose_"  + FLAGS_cam_name + "/"
                     << std::setw(6) << std::setfill('0') << frame_index  * FLAGS_frame_stride << ".txt";
 
         cout << "Reading file: " << filename_ss.str() << endl;

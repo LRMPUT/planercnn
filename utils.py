@@ -293,6 +293,65 @@ def generate_pyramid_anchors(scales, ratios, feature_shapes, feature_strides,
     return anchors
 
 
+def roi_align_vectorized(image, box, height, width):
+    """
+    `image` is a 2-D array, representing the input feature map
+    `box` is a list of four numbers
+    `height` and `width` are the desired spatial size of output feature map
+    """
+    y_min, x_min, y_max, x_max = box
+
+    img_height, img_width = image.shape
+
+    y, x = np.meshgrid(
+            np.linspace(y_min, y_max, height),
+            np.linspace(x_min, x_max, width))
+
+    y = y.transpose().ravel()
+    x = x.transpose().ravel()
+
+    image = image.ravel()
+
+    y_l, y_h = np.floor(y).astype('int32'), np.ceil(y).astype('int32')
+    x_l, x_h = np.floor(x).astype('int32'), np.ceil(x).astype('int32')
+
+    a = image[y_l * img_width + x_l]
+    b = image[y_l * img_width + x_h]
+    c = image[y_h * img_width + x_l]
+    d = image[y_h * img_width + x_h]
+
+    y_weight = y - y_l
+    x_weight = x - x_l
+
+    feature_map = a * (1 - x_weight) * (1 - y_weight) + \
+                  b * x_weight * (1 - y_weight) + \
+                  c * y_weight * (1 - x_weight) + \
+                  d * x_weight * y_weight
+
+    return feature_map.reshape(height, width)
+
+
+def apply_anchor(image, box, fill_value=0.0):
+    h = image.shape[0]
+    w = image.shape[1]
+    ch = image.shape[2]
+    y1 = box[0]
+    x1 = box[1]
+    y2 = box[2]
+    x2 = box[3]
+    box_h = y2 - y1
+    box_w = x2 - x1
+
+    im_box = np.full([box_h, box_w, ch], fill_value=fill_value)
+    y1_trunc = max(0, y1)
+    x1_trunc = max(0, x1)
+    y2_trunc = min(h, y2)
+    x2_trunc = min(w, x2)
+    im_box[y1_trunc - y1: box_h + (y2_trunc - y2), x1_trunc - x1: box_w + (x2_trunc - x2)] = image[y1_trunc: y2_trunc, x1_trunc: x2_trunc]
+
+    return im_box
+
+
 ############################################################
 #  Data Formatting
 ############################################################
@@ -618,6 +677,59 @@ def fitPlane(points):
     else:
         return np.linalg.lstsq(points, np.ones(points.shape[0]))[0]
     return
+
+
+def fit_plane_torch(points):
+    if points.shape[0] == points.shape[1]:
+        return torch.solve(torch.ones(points.shape[0], 1), points)[0]
+    else:
+        return torch.lstsq(torch.ones(points.shape[0], 1), points)[0]
+    return
+
+
+def fit_plane_ransac(points):
+    num_iter = 500
+    planeDiffThreshold = 0.01
+
+    best_inliers = 0
+    best_ind = [0, 1, 2]
+    best_inliers_mask = None
+    for i in range(num_iter):
+        cur_ind = torch.randperm(points.shape[0])[0: 3]
+        try:
+            cur_plane = fit_plane_torch(points[cur_ind])
+        except RuntimeError as e:
+            continue
+
+        # relative distance to the plane
+        diff = torch.abs(torch.matmul(points, cur_plane).squeeze(1) - torch.ones(points.shape[0]))
+        inlier_mask = diff < planeDiffThreshold
+
+        cur_inliers = inlier_mask.sum()
+        if cur_inliers > best_inliers:
+            best_inliers = cur_inliers
+            best_ind = cur_ind
+            best_inliers_mask = inlier_mask
+
+        # if enough inliers
+        if cur_inliers.float() / points.shape[0] > 0.9:
+            break
+
+    return best_inliers_mask
+
+
+def calc_points_depth(depth, K):
+    h = depth.shape[0]
+    w = depth.shape[1]
+    urange = np.arange(w, dtype=np.float32).reshape(1, -1).repeat(h, 0)
+    vrange = np.arange(h, dtype=np.float32).reshape(-1, 1).repeat(w, 1)
+    ranges = np.stack([urange, vrange, np.ones(urange.shape)], axis=-1)
+
+    points = np.matmul(np.linalg.inv(K), np.expand_dims(ranges, axis=-1)).squeeze(axis=-1)
+    points *= np.expand_dims(depth, axis=-1)
+
+    return points
+
 
 ## Run PlaneNet inference
 def predictPlaneNet(image):
