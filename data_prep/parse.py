@@ -37,49 +37,6 @@ large_thresh = 50
 
 stereoSuffixes = ['left', 'right']
 
-
-class ColorPalette:
-    def __init__(self, numColors):
-        np.random.seed(2)
-        self.colorMap = np.array([[255, 0, 0],
-                                  [0, 255, 0],
-                                  [0, 0, 255],
-                                  [80, 128, 255],
-                                  [255, 230, 180],
-                                  [255, 0, 255],
-                                  [0, 255, 255],
-                                  [100, 0, 0],
-                                  [0, 100, 0],
-                                  [255, 255, 0],
-                                  [50, 150, 0],
-                                  [200, 255, 255],
-                                  [255, 200, 255],
-                                  [128, 128, 80],
-                                  [0, 50, 128],
-                                  [0, 100, 100],
-                                  [0, 255, 128],
-                                  [0, 128, 255],
-                                  [255, 0, 128],
-                                  [128, 0, 255],
-                                  [255, 128, 0],
-                                  [128, 255, 0],
-        ])
-
-        if numColors > self.colorMap.shape[0]:
-            self.colorMap = np.concatenate([self.colorMap, np.random.randint(255, size = (numColors - self.colorMap.shape[0], 3))], axis=0)
-            pass
-
-        return
-
-    def getColorMap(self):
-        return self.colorMap
-
-    def getColor(self, index):
-        if index >= self.colorMap.shape[0]:
-            return np.random.randint(255, size = (3))
-        else:
-            return self.colorMap[index]
-            pass
         
 def loadClassMap():
     classMap = {}

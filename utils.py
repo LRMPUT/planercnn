@@ -688,8 +688,8 @@ def fit_plane_torch(points):
 
 
 def fit_plane_ransac(points):
-    num_iter = 500
-    planeDiffThreshold = 0.01
+    num_iter = 100
+    plane_diff_threshold = 0.01
 
     best_inliers = 0
     best_ind = [0, 1, 2]
@@ -703,7 +703,7 @@ def fit_plane_ransac(points):
 
         # relative distance to the plane
         diff = torch.abs(torch.matmul(points, cur_plane).squeeze(1) - torch.ones(points.shape[0]))
-        inlier_mask = diff < planeDiffThreshold
+        inlier_mask = diff < plane_diff_threshold
 
         cur_inliers = inlier_mask.sum()
         if cur_inliers > best_inliers:
@@ -1398,6 +1398,51 @@ def one_hot(values, depth):
 
 def normalize(values):
     return values / np.maximum(np.linalg.norm(values, axis=-1, keepdims=True), 1e-4)
+
+
+class ColorPalette:
+    def __init__(self, numColors):
+        np.random.seed(2)
+        self.colorMap = np.array([[255, 0, 0],
+                                  [0, 255, 0],
+                                  [0, 0, 255],
+                                  [80, 128, 255],
+                                  [255, 230, 180],
+                                  [255, 0, 255],
+                                  [0, 255, 255],
+                                  [100, 0, 0],
+                                  [0, 100, 0],
+                                  [255, 255, 0],
+                                  [50, 150, 0],
+                                  [200, 255, 255],
+                                  [255, 200, 255],
+                                  [128, 128, 80],
+                                  [0, 50, 128],
+                                  [0, 100, 100],
+                                  [0, 255, 128],
+                                  [0, 128, 255],
+                                  [255, 0, 128],
+                                  [128, 0, 255],
+                                  [255, 128, 0],
+                                  [128, 255, 0],
+        ])
+
+        if numColors > self.colorMap.shape[0]:
+            self.colorMap = np.concatenate([self.colorMap, np.random.randint(255, size = (numColors - self.colorMap.shape[0], 3))], axis=0)
+            pass
+
+        return
+
+    def getColorMap(self):
+        return self.colorMap
+
+    def getColor(self, index):
+        if index >= self.colorMap.shape[0]:
+            return np.random.randint(255, size = (3))
+        else:
+            return self.colorMap[index]
+            pass
+
 
 if __name__ == '__main__':
     from config import Config
