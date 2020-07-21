@@ -16,6 +16,7 @@ import resource
 import pymesh
 import pickle
 from disjoint_set import DisjointSet
+import fnmatch
 
 
 ROOT_FOLDER = "/mnt/data/datasets/JW/scenenet_rgbd/scenes/"
@@ -503,12 +504,12 @@ def loadMesh(scene_id):
 
 
 def processMesh(scene_id):
-    # points, faces, segmentation, groupSegments, groupLabels = loadMesh(scene_id)
-    # with open(ROOT_FOLDER + scene_id + '/mesh.p', 'wb') as pickle_file:
-    #     pickle.dump([points, faces, segmentation, groupSegments, groupLabels], pickle_file)
-    #
-    with open(ROOT_FOLDER + scene_id + '/mesh.p', 'rb') as pickle_file:
-        points, faces, segmentation, groupSegments, groupLabels = pickle.load(pickle_file)
+    points, faces, segmentation, groupSegments, groupLabels = loadMesh(scene_id)
+    with open(ROOT_FOLDER + scene_id + '/mesh.p', 'wb') as pickle_file:
+        pickle.dump([points, faces, segmentation, groupSegments, groupLabels], pickle_file)
+
+    # with open(ROOT_FOLDER + scene_id + '/mesh.p', 'rb') as pickle_file:
+    #     points, faces, segmentation, groupSegments, groupLabels = pickle.load(pickle_file)
 
     mesh = pymesh.form_mesh(points, faces)
     pymesh.save_mesh(ROOT_FOLDER + scene_id + '/' + scene_id + '_cleaned.ply', mesh)
@@ -1304,8 +1305,9 @@ def select_split(scene_ids, invalid_frames, idx, sel_scenes, sel_frames, target_
     return idx
 
 
-def select_splits():
-    scene_ids = os.listdir(ROOT_FOLDER)
+def select_splits(scene_ids):
+    # scene_ids = os.listdir(ROOT_FOLDER)
+    scene_ids = scene_ids.copy()
     random.shuffle(scene_ids)
 
     invalid_frames = []
@@ -1313,8 +1315,8 @@ def select_splits():
         with open(os.path.join(ROOT_FOLDER, scene_id, 'invalid_frames.txt'), 'r') as inv_file:
             invalid_frames.append(inv_file.read().splitlines())
 
-    num_train = 45000
-    num_test = 2000
+    num_train = 20000
+    num_test = 1000
 
     idx = 0
     train_scenes = []
@@ -1343,7 +1345,7 @@ def main():
     soft, hard = resource.getrlimit(resource.RLIMIT_AS)
     resource.setrlimit(resource.RLIMIT_AS, (48 * 1024 * 1024 * 1024, hard))
 
-    scene_ids = os.listdir(ROOT_FOLDER)
+    scene_ids = fnmatch.filter(os.listdir(ROOT_FOLDER), 'scene00*_00')
     scene_ids = sorted(scene_ids)
     print(scene_ids)
 
@@ -1399,8 +1401,8 @@ def main():
 
         continue
 
-    print('selecting splits')
-    select_splits()
+    # print('selecting splits')
+    # select_splits(scene_ids)
 
 
 if __name__=='__main__':

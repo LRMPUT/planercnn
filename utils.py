@@ -495,7 +495,7 @@ end_header
 
 
 ## The function to compute plane depths from plane parameters
-def calcPlaneDepths(planes, width, height, camera, max_depth=10):
+def calcPlaneDepths(planes, width, height, camera, max_depth=20):
     urange = (np.arange(width, dtype=np.float32).reshape(1, -1).repeat(height, 0) / (width + 1) * (camera[4] + 1) - camera[2]) / camera[0]
     vrange = (np.arange(height, dtype=np.float32).reshape(-1, 1).repeat(width, 1) / (height + 1) * (camera[5] + 1) - camera[3]) / camera[1]
     ranges = np.stack([urange, np.ones(urange.shape), -vrange], axis=-1)
@@ -512,7 +512,7 @@ def calcPlaneDepths(planes, width, height, camera, max_depth=10):
     return planeDepths
 
 ## The function to compute plane XYZ from plane parameters
-def calcPlaneXYZ(planes, width, height, camera, max_depth=10):
+def calcPlaneXYZ(planes, width, height, camera, max_depth=20):
     urange = (np.arange(width, dtype=np.float32).reshape(1, -1).repeat(height, 0) / (width + 1) * (camera[4] + 1) - camera[2]) / camera[0]
     vrange = (np.arange(height, dtype=np.float32).reshape(-1, 1).repeat(width, 1) / (height + 1) * (camera[5] + 1) - camera[3]) / camera[1]
     ranges = np.stack([urange, np.ones(urange.shape), -vrange], axis=-1)
@@ -1400,48 +1400,48 @@ def normalize(values):
     return values / np.maximum(np.linalg.norm(values, axis=-1, keepdims=True), 1e-4)
 
 
-class ColorPalette:
-    def __init__(self, numColors):
-        np.random.seed(2)
-        self.colorMap = np.array([[255, 0, 0],
-                                  [0, 255, 0],
-                                  [0, 0, 255],
-                                  [80, 128, 255],
-                                  [255, 230, 180],
-                                  [255, 0, 255],
-                                  [0, 255, 255],
-                                  [100, 0, 0],
-                                  [0, 100, 0],
-                                  [255, 255, 0],
-                                  [50, 150, 0],
-                                  [200, 255, 255],
-                                  [255, 200, 255],
-                                  [128, 128, 80],
-                                  [0, 50, 128],
-                                  [0, 100, 100],
-                                  [0, 255, 128],
-                                  [0, 128, 255],
-                                  [255, 0, 128],
-                                  [128, 0, 255],
-                                  [255, 128, 0],
-                                  [128, 255, 0],
-        ])
-
-        if numColors > self.colorMap.shape[0]:
-            self.colorMap = np.concatenate([self.colorMap, np.random.randint(255, size = (numColors - self.colorMap.shape[0], 3))], axis=0)
-            pass
-
-        return
-
-    def getColorMap(self):
-        return self.colorMap
-
-    def getColor(self, index):
-        if index >= self.colorMap.shape[0]:
-            return np.random.randint(255, size = (3))
-        else:
-            return self.colorMap[index]
-            pass
+# class ColorPalette:
+#     def __init__(self, numColors):
+#         np.random.seed(2)
+#         self.colorMap = np.array([[255, 0, 0],
+#                                   [0, 255, 0],
+#                                   [0, 0, 255],
+#                                   [80, 128, 255],
+#                                   [255, 230, 180],
+#                                   [255, 0, 255],
+#                                   [0, 255, 255],
+#                                   [100, 0, 0],
+#                                   [0, 100, 0],
+#                                   [255, 255, 0],
+#                                   [50, 150, 0],
+#                                   [200, 255, 255],
+#                                   [255, 200, 255],
+#                                   [128, 128, 80],
+#                                   [0, 50, 128],
+#                                   [0, 100, 100],
+#                                   [0, 255, 128],
+#                                   [0, 128, 255],
+#                                   [255, 0, 128],
+#                                   [128, 0, 255],
+#                                   [255, 128, 0],
+#                                   [128, 255, 0],
+#         ])
+#
+#         if numColors > self.colorMap.shape[0]:
+#             self.colorMap = np.concatenate([self.colorMap, np.random.randint(255, size = (numColors - self.colorMap.shape[0], 3))], axis=0)
+#             pass
+#
+#         return
+#
+#     def getColorMap(self):
+#         return self.colorMap
+#
+#     def getColor(self, index):
+#         if index >= self.colorMap.shape[0]:
+#             return np.random.randint(255, size = (3))
+#         else:
+#             return self.colorMap[index]
+#             pass
 
 
 if __name__ == '__main__':

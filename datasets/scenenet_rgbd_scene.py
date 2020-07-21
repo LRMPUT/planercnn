@@ -103,7 +103,7 @@ class ScenenetRgbdScene():
         imagePath = os.path.join(self.scenePath, 'frames', 'color_' + self.cams[cam_idx], frame_num + '.jpg')
         image = cv2.imread(imagePath)
 
-        segmentationPath = imagePath.replace('frames/color_' + self.cams[cam_idx] + '/', 'annotation/segmentation/').replace('.jpg', '.png')
+        segmentationPath = imagePath.replace('frames/color_' + self.cams[cam_idx] + '/', 'annotation/segmentation_' + self.cams[cam_idx] + '/').replace('.jpg', '.png')
         depthPath = imagePath.replace('color', 'depth').replace('.jpg', '.png')
         posePath = imagePath.replace('color', 'pose').replace('.jpg', '.txt')
         semanticsPath = imagePath.replace('color/', 'instance-filt/').replace('.jpg', '.png')
@@ -194,10 +194,11 @@ class ScenenetRgbdScene():
                 if self.writer is not None:
                     self.writer.add_image('image', image, dataformats='HWC')
                     # up to 10 m
-                    self.writer.add_image('depth', depth / 10.0, dataformats='HW')
-                    self.writer.add_image('plane_depth', plane_depth / 10.0, dataformats='HW')
+                    self.writer.add_image('depth', depth / 15.0, dataformats='HW')
+                    self.writer.add_image('plane_depth', plane_depth / 15.0, dataformats='HW')
                     self.writer.add_image('plane_mask', plane_mask, dataformats='HW')
-                    self.writer.add_image('depth_error', (np.abs(plane_depth - depth) * plane_mask), dataformats='HW')
+                    self.writer.add_image('depth_error', (np.abs(plane_depth - depth) * plane_mask)/3.0, dataformats='HW')
+                    self.writer.flush()
                     pass
 
                 print('depth error', depth_error)

@@ -59,7 +59,8 @@ const int   TEXT_HEIGHT     = 13;
 
 int screenWidth;
 int screenHeight;
-double focalLength;
+double focalLengthX;
+double focalLengthY;
 int numFrames;
 double depthShift;
 
@@ -426,14 +427,16 @@ int main(int argc, char **argv)
             if (key == "depthWidth")
                 screenWidth = number;
             if (key == "fx_depth")
-                focalLength = number;
+                focalLengthX = number;
+            if (key == "fy_depth")
+                focalLengthY = number;
             if (key == "numDepthFrames")
                 numFrames = ceil(number / FLAGS_frame_stride);
         }
     }
     depthShift = 1000.0;
 
-    cout << screenHeight << '\t' << screenWidth << '\t' << focalLength << '\t' << numFrames << '\t' << endl;
+    cout << screenHeight << '\t' << screenWidth << '\t' << focalLengthX << '\t' << focalLengthY << '\t' << numFrames << '\t' << endl;
 
     // check max of elements vertices and elements indices that your video card supports
     // Use these values to determine the range of glDrawRangeElements()
@@ -631,8 +634,8 @@ void toPerspective()
     // set perspective viewing frustum
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    float fov = 2 * atan(float(screenHeight) / 2 / focalLength) / 3.14 * 180;
-    gluPerspective(fov, (float)(screenWidth)/screenHeight, 0.1f, 100.0f); // FOV, AspectRatio, NearClip, FarClip
+    float fov = 2 * atan(float(screenHeight) / 2 / focalLengthY) / 3.14 * 180;
+    gluPerspective(fov, focalLengthY/focalLengthX, 0.1f, 100.0f); // FOV, AspectRatio, NearClip, FarClip
 
     // switch to modelview matrix in order to set scene
     glMatrixMode(GL_MODELVIEW);
@@ -669,7 +672,7 @@ void displayCB()
     if (frame_index < numFrames) {
         if (frame_index >= 0) {
             stringstream filename_ss;
-            filename_ss << FLAGS_root_folder << scene_id << "/annotation/segmentation" + FLAGS_frames_id + FLAGS_cam_name + "/"
+            filename_ss << FLAGS_root_folder << scene_id << "/annotation/segmentation_" + FLAGS_frames_id + FLAGS_cam_name + "/"
                         << std::setw(6) << std::setfill('0') << frame_index * FLAGS_frame_stride << ".png";
 
             cout << "Saving to file: " << filename_ss.str() << endl;
