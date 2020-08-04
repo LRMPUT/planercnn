@@ -61,6 +61,7 @@ int screenWidth;
 int screenHeight;
 double focalLengthX;
 double focalLengthY;
+double cx, cy;
 int numFrames;
 double depthShift;
 
@@ -430,13 +431,18 @@ int main(int argc, char **argv)
                 focalLengthX = number;
             if (key == "fy_depth")
                 focalLengthY = number;
+            if (key == "mx_depth")
+                cx = number;
+            if (key == "my_depth")
+                cy = number;
             if (key == "numDepthFrames")
                 numFrames = ceil(number / FLAGS_frame_stride);
         }
     }
     depthShift = 1000.0;
 
-    cout << screenHeight << '\t' << screenWidth << '\t' << focalLengthX << '\t' << focalLengthY << '\t' << numFrames << '\t' << endl;
+    cout << screenHeight << '\t' << screenWidth << '\t' << focalLengthX << '\t' << focalLengthY << '\t'
+         << cx << '\t' << cy << '\t' << numFrames << '\t' << endl;
 
     // check max of elements vertices and elements indices that your video card supports
     // Use these values to determine the range of glDrawRangeElements()
@@ -634,8 +640,23 @@ void toPerspective()
     // set perspective viewing frustum
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    float fov = 2 * atan(float(screenHeight) / 2 / focalLengthY) / 3.14 * 180;
-    gluPerspective(fov, focalLengthY/focalLengthX, 0.1f, 100.0f); // FOV, AspectRatio, NearClip, FarClip
+    // float fov = 2 * atan(float(screenHeight) / 2 / focalLengthY) / 3.14 * 180;
+    // gluPerspective(fov, focalLengthY/focalLengthX, 0.1f, 100.0f); // FOV, AspectRatio, NearClip, FarClip
+
+    double near = 0.1, far = 100.0;
+    glOrtho(0, screenWidth, 0, screenHeight, near, far);
+    // column-major
+//    GLdouble perspMatrix[16] = {focalLengthX/cx, 0.0, 0.0, 0.0,
+//                                0.0, focalLengthY/cy, 0.0, 0.0,
+//                                0.0, 0.0, -(far + near)/(far - near), -1.0,
+//                                0.0, 0.0, -2*far*near/(far - near), 0.0};
+    GLdouble perspMatrix[16] = {focalLengthX, 0.0, 0.0, 0.0,
+                                0.0, focalLengthY, 0.0, 0.0,
+                                -cx, -cy, far + near, -1.0,
+                                0.0, 0.0, far*near, 0.0};
+
+    glMultMatrixd(perspMatrix);
+
 
     // switch to modelview matrix in order to set scene
     glMatrixMode(GL_MODELVIEW);

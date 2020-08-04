@@ -11,6 +11,7 @@ import math
 import random
 import numpy as np
 import torch
+import torchvision
 import cv2
 import itertools
 
@@ -1398,6 +1399,15 @@ def one_hot(values, depth):
 
 def normalize(values):
     return values / np.maximum(np.linalg.norm(values, axis=-1, keepdims=True), 1e-4)
+
+
+def roi_align(input, boxes, output_size):
+    y1, x1, y2, x2 = boxes.chunk(4, dim=1)
+    h = input.shape[2]
+    w = input.shape[3]
+    # convert to unnormalized coordinates in [x1, y1, x2, y2] format
+    boxes_pt = torch.cat([x1 * w, y1 * h, x2 * w, y2 * h], dim=1)
+    return torchvision.ops.roi_align(input, [boxes_pt], output_size)
 
 
 # class ColorPalette:

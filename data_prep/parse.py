@@ -1345,7 +1345,7 @@ def main():
     soft, hard = resource.getrlimit(resource.RLIMIT_AS)
     resource.setrlimit(resource.RLIMIT_AS, (48 * 1024 * 1024 * 1024, hard))
 
-    scene_ids = fnmatch.filter(os.listdir(ROOT_FOLDER), 'scene00*_00')
+    scene_ids = fnmatch.filter(os.listdir(ROOT_FOLDER), 'scene00??_00')
     scene_ids = sorted(scene_ids)
     print(scene_ids)
 
@@ -1401,8 +1401,8 @@ def main():
 
         continue
 
-    # print('selecting splits')
-    # select_splits(scene_ids)
+    print('selecting splits')
+    select_splits(scene_ids)
 
 
 if __name__=='__main__':

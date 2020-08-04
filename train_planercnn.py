@@ -41,12 +41,12 @@ def train(options):
     writer = SummaryWriter('runs/train')
 
     dataset = ScenenetRgbdDataset(options, config, split='train', random=False, writer=writer)
-    # dataset = PlaneDataset(options, config, split='train', random=True)
+    # dataset = PlaneDataset(options, config, split='train', random=False)
     # dataset_test = PlaneDataset(options, config, split='test', random=False)
 
     print('the number of images', len(dataset))
 
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=0)
 
     model = MaskRCNN(config)
     refine_model = RefineModel(options)
@@ -149,8 +149,10 @@ def train(options):
                     config, rpn_match, rpn_bbox, rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits,
                     target_deltas, mrcnn_bbox, target_mask, mrcnn_mask, target_parameters, mrcnn_parameters)
 
-                # losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss]
-                losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss]
+                losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss]
+                # losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss]
+                if writer is not None and sampleIndex % 100 == 0:
+                    writer.add_scalar('maskrcnn_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
 
                 if config.PREDICT_NORMAL_NP:
                     normal_np_pred = depth_np_pred[0, 1:]                    
@@ -164,6 +166,8 @@ def train(options):
                 else:
                     depth_np_loss = l1LossMask(depth_np_pred[:, 80:560], gt_depth[:, 80:560], (gt_depth[:, 80:560] > 1e-4).float())
                     losses.append(depth_np_loss)
+                    if writer is not None and sampleIndex % 100 == 0:
+                        writer.add_scalar('depth_np_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
                     normal_np_pred = None
                     pass
 
@@ -216,7 +220,9 @@ def train(options):
                     else:
                         depth_loss = l1LossMask(depth_np_pred[:, 80:560], gt_depth[:, 80:560], (gt_depth[:, 80:560] > 1e-4).float())
                         pass
-                    losses.append(depth_loss)                                                
+                    losses.append(depth_loss)
+                    if writer is not None and sampleIndex % 100 == 0:
+                        writer.add_scalar('depth_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
                     pass                    
                 continue
 
@@ -311,6 +317,8 @@ def train(options):
                         pass                    
                     continue
                 losses += [mask_loss + depth_loss + plane_depth_loss + plane_loss]
+                if writer is not None and sampleIndex % 100 == 0:
+                    writer.add_scalar('detection_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
                 
                 masks = results[-1]['mask'].squeeze(1)
                 all_masks = torch.softmax(masks, dim=0)
@@ -394,7 +402,7 @@ def train(options):
 
             if sampleIndex % 500 < options.batchSize or options.visualizeMode == 'debug':
                 ## Visualize intermediate results
-                visualizeBatchPair(options, config, input_pair, detection_pair, indexOffset=sampleIndex % 500)
+                visualizeBatchPair(options, config, input_pair, detection_pair, indexOffset=sampleIndex % 500, writer=writer)
                 if (len(detection_pair[0]['detection']) > 0 and len(detection_pair[0]['detection']) < 30) and 'refine' in options.suffix:
                     visualizeBatchRefinement(options, config, input_pair[0], [{'mask': masks_gt, 'plane': planes_gt}, ] + results, indexOffset=sampleIndex % 500, concise=True)
                     pass
@@ -432,7 +440,7 @@ if __name__ == '__main__':
         pass
     
     args.checkpoint_dir = 'checkpoint/' + args.keyname
-    args.test_dir = 'test/' + args.keyname
+    args.test_dir = args.dataFolder + '/test/' + args.keyname
 
     if False:
         writeHTML(args.test_dir, ['image_0', 'segmentation_0', 'depth_0', 'depth_0_detection', 'depth_0_detection_ori'], labels=['input', 'segmentation', 'gt', 'before', 'after'], numImages=20, image_width=160, convertToImage=True)
