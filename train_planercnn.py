@@ -129,40 +129,74 @@ def train(options):
                     indexOffset + 9].cuda(), sample[indexOffset + 10].cuda(), sample[indexOffset + 11].cuda(), sample[
                     indexOffset + 12].cuda()
 
-                if indexOffset == 13:
-                    input_pair.append({
-                                          'image': images,
-                                          'depth': gt_depth,
-                                          'mask': gt_masks,
-                                          'bbox': gt_boxes,
-                                          'extrinsics': extrinsics,
-                                          'segmentation': gt_segmentation,
-                                          'plane': gt_plane,
-                                          'camera': camera})
-                    continue
-                rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox, target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks, detection_gt_parameters, detection_gt_masks, rpn_rois, roi_features, roi_indices, feature_map, depth_np_pred = model.predict(
-                        [images, image_metas, gt_class_ids, gt_boxes, gt_masks, gt_parameters, camera],
+                input_pair.append({'image': images,
+                                   'image_meta': image_metas,
+                                   'depth': gt_depth,
+                                   'mask': gt_masks,
+                                   'bbox': gt_boxes,
+                                   'extrinsics': extrinsics,
+                                   'segmentation': gt_segmentation,
+                                   'class_ids': gt_class_ids,
+                                   'parameters': gt_parameters,
+                                   'plane': gt_plane,
+                                   'rpn_match': rpn_match,
+                                   'rpn_bbox': rpn_bbox,
+                                   'camera': camera})
+
+            if config.PREDICT_STEREO:
+                [rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
+                 target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks,
+                 detection_gt_parameters, detection_gt_masks, rpn_rois, roi_features, roi_indices, feature_map,
+                 depth_np_pred, disp1_np_pred, disp2_np_pred, disp3_np_pred] = model.predict(
+                        [input_pair[0]['image'], input_pair[0]['image_meta'], input_pair[0]['class_ids'],
+                         input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
+                         input_pair[0]['camera'],
+                         input_pair[1]['image']],
+                        mode='training_detection', use_nms=2, use_refinement='refinement' in options.suffix,
+                        return_feature_map=True)
+            else:
+                [rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
+                 target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks,
+                 detection_gt_parameters, detection_gt_masks, rpn_rois, roi_features, roi_indices, feature_map,
+                 depth_np_pred] = model.predict(
+                        [input_pair[0]['image'], input_pair[0]['image_meta'], input_pair[0]['class_ids'],
+                         input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
+                         input_pair[0]['camera']],
                         mode='training_detection', use_nms=2, use_refinement='refinement' in options.suffix,
                         return_feature_map=True)
 
-                rpn_class_loss, rpn_bbox_loss, mrcnn_class_loss, mrcnn_bbox_loss, mrcnn_mask_loss, mrcnn_parameter_loss = compute_losses(
-                    config, rpn_match, rpn_bbox, rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits,
+            [rpn_class_loss, rpn_bbox_loss, mrcnn_class_loss, mrcnn_bbox_loss, mrcnn_mask_loss,
+             mrcnn_parameter_loss] = compute_losses(
+                    config, input_pair[0]['rpn_match'], input_pair[0]['rpn_bbox'], rpn_class_logits, rpn_pred_bbox,
+                    target_class_ids, mrcnn_class_logits,
                     target_deltas, mrcnn_bbox, target_mask, mrcnn_mask, target_parameters, mrcnn_parameters)
 
-                losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss]
-                # losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss]
-                if writer is not None and sampleIndex % 100 == 0:
-                    writer.add_scalar('maskrcnn_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
+            losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss]
+            # losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss]
+            if writer is not None and sampleIndex % 100 == 0:
+                writer.add_scalar('maskrcnn_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
 
-                if config.PREDICT_NORMAL_NP:
-                    normal_np_pred = depth_np_pred[0, 1:]                    
-                    depth_np_pred = depth_np_pred[:, 0]
-                    gt_normal = gt_depth[0, 1:]                    
-                    gt_depth = gt_depth[:, 0]
-                    depth_np_loss = l1LossMask(depth_np_pred[:, 80:560], gt_depth[:, 80:560], (gt_depth[:, 80:560] > 1e-4).float())
-                    normal_np_loss = l2LossMask(normal_np_pred[:, 80:560], gt_normal[:, 80:560], (torch.norm(gt_normal[:, 80:560], dim=0) > 1e-4).float())
-                    losses.append(depth_np_loss)
-                    losses.append(normal_np_loss)
+            gt_depth = input_pair[0]['depth']
+            if config.PREDICT_NORMAL_NP:
+                normal_np_pred = depth_np_pred[0, 1:]
+                depth_np_pred = depth_np_pred[:, 0]
+                gt_normal = gt_depth[0, 1:]
+                gt_depth = gt_depth[:, 0]
+                depth_np_loss = l1LossMask(depth_np_pred[:, 80:560], gt_depth[:, 80:560], (gt_depth[:, 80:560] > 1e-4).float())
+                normal_np_loss = l2LossMask(normal_np_pred[:, 80:560], gt_normal[:, 80:560], (torch.norm(gt_normal[:, 80:560], dim=0) > 1e-4).float())
+                losses.append(depth_np_loss)
+                losses.append(normal_np_loss)
+            else:
+                if config.PREDICT_STEREO:
+                    fx = input_pair[0]['camera'][0, 0]
+                    gt_disp = fx * torch.tensor(config.BASELINE, dtype=torch.float).cuda() / torch.clamp(gt_depth, min=1.0e-4)
+                    mask = gt_disp < config.MAXDISP
+                    disp_np_loss = 0.5 * F.smooth_l1_loss(disp1_np_pred, gt_disp[mask], size_average=True) +\
+                                   0.7 * F.smooth_l1_loss(disp2_np_pred, gt_disp[mask], size_average=True) +\
+                                   F.smooth_l1_loss(disp3_np_pred, gt_disp[mask], size_average=True)
+                    losses.append(disp_np_loss)
+                    if writer is not None and sampleIndex % 100 == 0:
+                        writer.add_scalar('disp_np_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
                 else:
                     depth_np_loss = l1LossMask(depth_np_pred[:, 80:560], gt_depth[:, 80:560], (gt_depth[:, 80:560] > 1e-4).float())
                     losses.append(depth_np_loss)
@@ -171,60 +205,60 @@ def train(options):
                     normal_np_pred = None
                     pass
 
-                if len(detections) > 0:
-                    detections, detection_masks = unmoldDetections(config, camera, detections, detection_masks, depth_np_pred, normal_np_pred, debug=False)
-                    if 'refine_only' in options.suffix:
-                        detections, detection_masks = detections.detach(), detection_masks.detach()
-                        pass
-                    XYZ_pred, detection_mask, plane_XYZ = calcXYZModule(config, camera, detections, detection_masks, depth_np_pred, return_individual=True)
-                    detection_mask = detection_mask.unsqueeze(0)                        
-                else:
-                    XYZ_pred = torch.zeros((3, config.IMAGE_MAX_DIM, config.IMAGE_MAX_DIM)).cuda()
-                    detection_mask = torch.zeros((1, config.IMAGE_MAX_DIM, config.IMAGE_MAX_DIM)).cuda()
-                    plane_XYZ = torch.zeros((1, 3, config.IMAGE_MAX_DIM, config.IMAGE_MAX_DIM)).cuda()                        
+            if len(detections) > 0:
+                detections, detection_masks = unmoldDetections(config, camera, detections, detection_masks, depth_np_pred, normal_np_pred, debug=False)
+                if 'refine_only' in options.suffix:
+                    detections, detection_masks = detections.detach(), detection_masks.detach()
                     pass
+                XYZ_pred, detection_mask, plane_XYZ = calcXYZModule(config, camera, detections, detection_masks, depth_np_pred, return_individual=True)
+                detection_mask = detection_mask.unsqueeze(0)
+            else:
+                XYZ_pred = torch.zeros((3, config.IMAGE_MAX_DIM, config.IMAGE_MAX_DIM)).cuda()
+                detection_mask = torch.zeros((1, config.IMAGE_MAX_DIM, config.IMAGE_MAX_DIM)).cuda()
+                plane_XYZ = torch.zeros((1, 3, config.IMAGE_MAX_DIM, config.IMAGE_MAX_DIM)).cuda()
+                pass
 
-                input_pair.append({
-                                      'image': images,
-                                      'depth': gt_depth,
-                                      'mask': gt_masks,
-                                      'bbox': gt_boxes,
-                                      'extrinsics': extrinsics,
-                                      'segmentation': gt_segmentation,
-                                      'parameters': detection_gt_parameters,
-                                      'plane': gt_plane,
-                                      'camera': camera})
-                detection_pair.append({
-                                          'XYZ': XYZ_pred,
-                                          'depth': XYZ_pred[1:2],
-                                          'mask': detection_mask,
-                                          'detection': detections,
-                                          'masks': detection_masks,
-                                          'feature_map': feature_map[0],
-                                          'plane_XYZ': plane_XYZ,
-                                          'depth_np': depth_np_pred})
+            # input_pair.append({
+            #                       'image': images,
+            #                       'depth': gt_depth,
+            #                       'mask': gt_masks,
+            #                       'bbox': gt_boxes,
+            #                       'extrinsics': extrinsics,
+            #                       'segmentation': gt_segmentation,
+            #                       'parameters': detection_gt_parameters,
+            #                       'plane': gt_plane,
+            #                       'camera': camera})
+            detection_pair.append({
+                                      'XYZ': XYZ_pred,
+                                      'depth': XYZ_pred[1:2],
+                                      'mask': detection_mask,
+                                      'detection': detections,
+                                      'masks': detection_masks,
+                                      'feature_map': feature_map[0],
+                                      'plane_XYZ': plane_XYZ,
+                                      'depth_np': depth_np_pred})
 
-                if 'depth' in options.suffix:
-                    ## Apply supervision on reconstructed depthmap (not used currently)
-                    if len(detections) > 0:
-                        background_mask = torch.clamp(1 - detection_masks.sum(0, keepdim=True), min=0)
-                        all_masks = torch.cat([background_mask, detection_masks], dim=0)
+            if 'depth' in options.suffix:
+                ## Apply supervision on reconstructed depthmap (not used currently)
+                if len(detections) > 0:
+                    background_mask = torch.clamp(1 - detection_masks.sum(0, keepdim=True), min=0)
+                    all_masks = torch.cat([background_mask, detection_masks], dim=0)
 
-                        all_masks = all_masks / all_masks.sum(0, keepdim=True)
-                        all_depths = torch.cat([depth_np_pred, plane_XYZ[:, 1]], dim=0)
+                    all_masks = all_masks / all_masks.sum(0, keepdim=True)
+                    all_depths = torch.cat([depth_np_pred, plane_XYZ[:, 1]], dim=0)
 
-                        depth_loss = l1LossMask(
-                            torch.sum(torch.abs(all_depths[:, 80:560] - gt_depth[:, 80:560]) * all_masks[:, 80:560],
-                                      dim=0), torch.zeros(config.IMAGE_MIN_DIM, config.IMAGE_MAX_DIM).cuda(),
-                            (gt_depth[0, 80:560] > 1e-4).float())
-                    else:
-                        depth_loss = l1LossMask(depth_np_pred[:, 80:560], gt_depth[:, 80:560], (gt_depth[:, 80:560] > 1e-4).float())
-                        pass
-                    losses.append(depth_loss)
-                    if writer is not None and sampleIndex % 100 == 0:
-                        writer.add_scalar('depth_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
-                    pass                    
-                continue
+                    depth_loss = l1LossMask(
+                        torch.sum(torch.abs(all_depths[:, 80:560] - gt_depth[:, 80:560]) * all_masks[:, 80:560],
+                                  dim=0), torch.zeros(config.IMAGE_MIN_DIM, config.IMAGE_MAX_DIM).cuda(),
+                        (gt_depth[0, 80:560] > 1e-4).float())
+                else:
+                    depth_loss = l1LossMask(depth_np_pred[:, 80:560], gt_depth[:, 80:560], (gt_depth[:, 80:560] > 1e-4).float())
+                    pass
+                losses.append(depth_loss)
+                if writer is not None and sampleIndex % 100 == 0:
+                    writer.add_scalar('depth_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
+                pass
+            continue
 
             if (len(detection_pair[0]['detection']) > 0 and len(detection_pair[0]['detection']) < 30) and 'refine' in options.suffix:
                 ## Use refinement network

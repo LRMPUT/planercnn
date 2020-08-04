@@ -1096,6 +1096,7 @@ class Mask(nn.Module):
             pass
         return x, roi_features
 
+
 class Depth(nn.Module):
     def __init__(self, num_output_channels=1):
         super(Depth, self).__init__()
@@ -1188,6 +1189,184 @@ class Depth(nn.Module):
         return x
 
 
+class disparityregression(nn.Module):
+    def __init__(self, maxdisp):
+        super(disparityregression, self).__init__()
+        self.disp = Variable(torch.Tensor(np.reshape(np.array(range(maxdisp)),[1,maxdisp,1,1])).cuda(), requires_grad=False)
+
+    def forward(self, x):
+        disp = self.disp.repeat(x.size()[0],1,x.size()[2],x.size()[3])
+        out = torch.sum(x*disp,1)
+        return out
+
+
+def convbn(in_planes, out_planes, kernel_size, stride, pad, dilation):
+
+    return nn.Sequential(nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, stride=stride, padding=dilation if dilation > 1 else pad, dilation = dilation, bias=False),
+                         nn.BatchNorm2d(out_planes))
+
+
+def convbn_3d(in_planes, out_planes, kernel_size, stride, pad):
+
+    return nn.Sequential(nn.Conv3d(in_planes, out_planes, kernel_size=kernel_size, padding=pad, stride=stride,bias=False),
+                         nn.BatchNorm3d(out_planes))
+
+
+class hourglass(nn.Module):
+    def __init__(self, inplanes):
+        super(hourglass, self).__init__()
+
+        self.conv1 = nn.Sequential(convbn_3d(inplanes, inplanes * 2, kernel_size=3, stride=2, pad=1),
+                                   nn.ReLU(inplace=True))
+
+        self.conv2 = convbn_3d(inplanes * 2, inplanes * 2, kernel_size=3, stride=1, pad=1)
+
+        self.conv3 = nn.Sequential(convbn_3d(inplanes * 2, inplanes * 2, kernel_size=3, stride=2, pad=1),
+                                   nn.ReLU(inplace=True))
+
+        self.conv4 = nn.Sequential(convbn_3d(inplanes * 2, inplanes * 2, kernel_size=3, stride=1, pad=1),
+                                   nn.ReLU(inplace=True))
+
+        self.conv5 = nn.Sequential(
+            nn.ConvTranspose3d(inplanes * 2, inplanes * 2, kernel_size=3, padding=1, output_padding=1, stride=2,
+                               bias=False),
+            nn.BatchNorm3d(inplanes * 2))  # +conv2
+
+        self.conv6 = nn.Sequential(
+            nn.ConvTranspose3d(inplanes * 2, inplanes, kernel_size=3, padding=1, output_padding=1, stride=2,
+                               bias=False),
+            nn.BatchNorm3d(inplanes))  # +x
+
+    def forward(self, x, presqu, postsqu):
+
+        out = self.conv1(x)  # in:1/4 out:1/8
+        pre = self.conv2(out)  # in:1/8 out:1/8
+        if postsqu is not None:
+            pre = F.relu(pre + postsqu, inplace=True)
+        else:
+            pre = F.relu(pre, inplace=True)
+
+        out = self.conv3(pre)  # in:1/8 out:1/16
+        out = self.conv4(out)  # in:1/16 out:1/16
+
+        if presqu is not None:
+            post = F.relu(self.conv5(out) + presqu, inplace=True)  # in:1/16 out:1/8
+        else:
+            post = F.relu(self.conv5(out) + pre, inplace=True)
+
+        out = self.conv6(post)  # in:1/8 out:1/4
+
+        return out, pre, post
+
+
+class DepthStereo(nn.Module):
+    def __init__(self, maxdisp, im_h, im_w):
+        super(DepthStereo, self).__init__()
+
+        self.maxdisp = maxdisp
+        self.im_h = im_h
+        self.im_w = im_w
+
+        self.dres0 = nn.Sequential(convbn_3d(64, 32, 3, 1, 1),
+                                     nn.ReLU(inplace=True),
+                                     convbn_3d(32, 32, 3, 1, 1),
+                                     nn.ReLU(inplace=True))
+
+        self.dres1 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
+                                   nn.ReLU(inplace=True),
+                                   convbn_3d(32, 32, 3, 1, 1))
+
+        self.dres2 = hourglass(32)
+
+        self.dres3 = hourglass(32)
+
+        self.dres4 = hourglass(32)
+
+        self.classif1 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
+                                      nn.ReLU(inplace=True),
+                                      nn.Conv3d(32, 1, kernel_size=3, padding=1, stride=1,bias=False))
+
+        self.classif2 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
+                                      nn.ReLU(inplace=True),
+                                      nn.Conv3d(32, 1, kernel_size=3, padding=1, stride=1,bias=False))
+
+        self.classif3 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
+                                      nn.ReLU(inplace=True),
+                                      nn.Conv3d(32, 1, kernel_size=3, padding=1, stride=1,bias=False))
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, math.sqrt(2. / n))
+            elif isinstance(m, nn.Conv3d):
+                n = m.kernel_size[0] * m.kernel_size[1]*m.kernel_size[2] * m.out_channels
+                m.weight.data.normal_(0, math.sqrt(2. / n))
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+            elif isinstance(m, nn.BatchNorm3d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+            elif isinstance(m, nn.Linear):
+                m.bias.data.zero_()
+
+    def forward(self, feat_left, feat_right):
+        # matching
+        cost = Variable(torch.FloatTensor(feat_left.size()[0],
+                                          feat_left.size()[1] * 2,
+                                          self.maxdisp // 4,
+                                          feat_left.size()[2],
+                                          feat_left.size()[3]).zero_()).cuda()
+
+        for i in range(self.maxdisp // 4):
+            if i > 0:
+                cost[:, :feat_left.size()[1], i, :, i:] = feat_left[:, :, :, i:]
+                cost[:, feat_left.size()[1]:, i, :, i:] = feat_right[:, :, :, :-i]
+            else:
+                cost[:, :feat_left.size()[1], i, :, :] = feat_left
+                cost[:, feat_left.size()[1]:, i, :, :] = feat_right
+        cost = cost.contiguous()
+
+        cost0 = self.dres0(cost)
+        cost0 = self.dres1(cost0) + cost0
+
+        out1, pre1, post1 = self.dres2(cost0, None, None)
+        out1 = out1 + cost0
+
+        out2, pre2, post2 = self.dres3(out1, pre1, post1)
+        out2 = out2 + cost0
+
+        out3, pre3, post3 = self.dres4(out2, pre1, post2)
+        out3 = out3 + cost0
+
+        cost1 = self.classif1(out1)
+        cost2 = self.classif2(out2) + cost1
+        cost3 = self.classif3(out3) + cost2
+
+        if self.training:
+            cost1 = F.upsample(cost1, [self.maxdisp, self.im_h, self.im_w], mode='trilinear')
+            cost2 = F.upsample(cost2, [self.maxdisp, self.im_h, self.im_w], mode='trilinear')
+
+            cost1 = torch.squeeze(cost1, 1)
+            pred1 = F.softmax(cost1, dim=1)
+            pred1 = disparityregression(self.maxdisp)(pred1)
+
+            cost2 = torch.squeeze(cost2, 1)
+            pred2 = F.softmax(cost2, dim=1)
+            pred2 = disparityregression(self.maxdisp)(pred2)
+
+        cost3 = F.upsample(cost3, [self.maxdisp, self.im_h, self.im_w], mode='trilinear')
+        cost3 = torch.squeeze(cost3, 1)
+        pred3 = F.softmax(cost3, dim=1)
+        # For your information: This formulation 'softmax(c)' learned "similarity"
+        # while 'softmax(-c)' learned 'matching cost' as mentioned in the paper.
+        # However, 'c' or '-c' do not affect the performance because feature-based cost volume provided flexibility.
+        pred3 = disparityregression(self.maxdisp)(pred3)
+
+        if self.training:
+            return pred1, pred2, pred3
+        else:
+            return pred3
    
    
 ############################################################
@@ -1458,12 +1637,15 @@ class MaskRCNN(nn.Module):
         self.mask = Mask(config, 256, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
 
         if self.config.PREDICT_DEPTH:
-            if self.config.PREDICT_BOUNDARY:            
-                self.depth = Depth(num_output_channels=3)
+            if self.config.PREDICT_STEREO:
+                self.depth = DepthStereo(self.config.MAXDISP, self.config.IMAGE_SHAPE[0], self.config.IMAGE_SHAPE[1])
             else:
-                self.depth = Depth(num_output_channels=1)
+                if self.config.PREDICT_BOUNDARY:
+                    self.depth = Depth(num_output_channels=3)
+                else:
+                    self.depth = Depth(num_output_channels=1)
+                    pass
                 pass
-            pass        
 
         ## Fix batch norm layers
         def set_bn_fix(m):
@@ -1672,13 +1854,25 @@ class MaskRCNN(nn.Module):
 
         feature_maps = [feature_map for index, feature_map in enumerate(rpn_feature_maps[::-1])]
         if self.config.PREDICT_DEPTH:
-            depth_np = self.depth(feature_maps)
-            if self.config.PREDICT_BOUNDARY:
-                boundary = depth_np[:, 1:]
-                depth_np = depth_np[:, 0]
-            else:
-                depth_np = depth_np.squeeze(1)
+            if self.config.PREDICT_STEREO:
+                molded_images_r = input[7]
+                [p2_out_r, p3_out_r, p4_out_r, p5_out_r, p6_out_r] = self.fpn(molded_images_r)
+                if self.training:
+                    disp1_np, disp2_np, disp3_np = self.depth(p2_out, p2_out_r)
+                else:
+                    disp1_np = self.depth(p2_out, p2_out_r)
                 pass
+                K = input[6]
+                fx = K[0, 0]
+                depth_np = fx * self.config.BASELINE / torch.clamp(disp1_np, min=1.0e-4)
+            else:
+                depth_np = self.depth(feature_maps)
+                if self.config.PREDICT_BOUNDARY:
+                    boundary = depth_np[:, 1:]
+                    depth_np = depth_np[:, 0]
+                else:
+                    depth_np = depth_np.squeeze(1)
+                    pass
         else:
             depth_np = torch.ones((1, self.config.IMAGE_MAX_DIM, self.config.IMAGE_MAX_DIM)).cuda()
             pass
@@ -1954,11 +2148,17 @@ class MaskRCNN(nn.Module):
                 feature_map = mrcnn_feature_maps
                 info.append(feature_map)
                 pass
-            
-            info.append(depth_np)
-            if self.config.PREDICT_BOUNDARY:
-                info.append(boundary)
-                pass
+
+            if self.config.PREDICT_STEREO:
+                info.append(depth_np)
+                if self.training:
+                    info.extend([disp1_np, disp2_np, disp3_np])
+            else:
+                info.append(depth_np)
+                if self.config.PREDICT_BOUNDARY:
+                    info.append(boundary)
+                    pass
+
             return info
 
 
