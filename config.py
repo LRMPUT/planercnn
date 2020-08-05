@@ -157,7 +157,7 @@ class Config(object):
 
     NUM_PARAMETERS = 3
 
-    METADATA = np.array([571.87, 571.87, 320, 240, 640, 480, 0, 0, 0, 0])
+    METADATA = np.array([554.2560, 579.4110, 320, 240, 640, 480, 0, 0, 0, 0])
 
     IMAGE_MAX_DIM = 640
     IMAGE_MIN_DIM = 480
@@ -358,7 +358,7 @@ class PlaneConfig(Config):
 
     # We use one GPU with 8GB memory, which can fit one image.
     # Adjust down if you use a smaller GPU.
-    IMAGES_PER_GPU = 16
+    IMAGES_PER_GPU = 1
 
     # Uncomment to train on 8 GPUs (default is 1)
     # GPU_COUNT = 8

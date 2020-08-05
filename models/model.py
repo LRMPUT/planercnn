@@ -1212,6 +1212,31 @@ def convbn_3d(in_planes, out_planes, kernel_size, stride, pad):
                          nn.BatchNorm3d(out_planes))
 
 
+class BasicBlock(nn.Module):
+    expansion = 1
+    def __init__(self, inplanes, planes, stride, downsample, pad, dilation):
+        super(BasicBlock, self).__init__()
+
+        self.conv1 = nn.Sequential(convbn(inplanes, planes, 3, stride, pad, dilation),
+                                   nn.ReLU(inplace=True))
+
+        self.conv2 = convbn(planes, planes, 3, 1, pad, dilation)
+
+        self.downsample = downsample
+        self.stride = stride
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2(out)
+
+        if self.downsample is not None:
+            x = self.downsample(x)
+
+        out += x
+
+        return out
+
+
 class hourglass(nn.Module):
     def __init__(self, inplanes):
         super(hourglass, self).__init__()
@@ -1260,12 +1285,15 @@ class hourglass(nn.Module):
 
 
 class DepthStereo(nn.Module):
-    def __init__(self, maxdisp, im_h, im_w):
+    def __init__(self, maxdisp, im_h, im_w, inplanes):
         super(DepthStereo, self).__init__()
 
         self.maxdisp = maxdisp
         self.im_h = im_h
         self.im_w = im_w
+        self.inplanes = inplanes
+
+        self.layer4 = self._make_layer(BasicBlock, 32, 3, 1, 1, 2)
 
         self.dres0 = nn.Sequential(convbn_3d(64, 32, 3, 1, 1),
                                      nn.ReLU(inplace=True),
@@ -1310,7 +1338,26 @@ class DepthStereo(nn.Module):
             elif isinstance(m, nn.Linear):
                 m.bias.data.zero_()
 
+    def _make_layer(self, block, planes, blocks, stride, pad, dilation):
+        downsample = None
+        if stride != 1 or self.inplanes != planes * block.expansion:
+           downsample = nn.Sequential(
+                nn.Conv2d(self.inplanes, planes * block.expansion,
+                          kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(planes * block.expansion),)
+
+        layers = []
+        layers.append(block(self.inplanes, planes, stride, downsample, pad, dilation))
+        self.inplanes = planes * block.expansion
+        for i in range(1, blocks):
+            layers.append(block(self.inplanes, planes,1,None,pad,dilation))
+
+        return nn.Sequential(*layers)
+
     def forward(self, feat_left, feat_right):
+        feat_left = self.layer4(feat_left)
+        feat_right = self.layer4(feat_right)
+
         # matching
         cost = Variable(torch.FloatTensor(feat_left.size()[0],
                                           feat_left.size()[1] * 2,
@@ -1607,7 +1654,8 @@ class MaskRCNN(nn.Module):
         ## Bottom-up Layers
         ## Returns a list of the last layers of each stage, 5 in total.
         ## Don't create the thead (stage 5), so we pick the 4th item in the list.
-        resnet = ResNet("resnet101", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
+        # resnet = ResNet("resnet101", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
+        resnet = ResNet("resnet50", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
         C1, C2, C3, C4, C5 = resnet.stages()
 
         ## Top-down Layers
@@ -1638,7 +1686,7 @@ class MaskRCNN(nn.Module):
 
         if self.config.PREDICT_DEPTH:
             if self.config.PREDICT_STEREO:
-                self.depth = DepthStereo(self.config.MAXDISP, self.config.IMAGE_SHAPE[0], self.config.IMAGE_SHAPE[1])
+                self.depth = DepthStereo(self.config.MAXDISP, self.config.IMAGE_SHAPE[0], self.config.IMAGE_SHAPE[1], 256)
             else:
                 if self.config.PREDICT_BOUNDARY:
                     self.depth = Depth(num_output_channels=3)
@@ -1862,9 +1910,9 @@ class MaskRCNN(nn.Module):
                 else:
                     disp1_np = self.depth(p2_out, p2_out_r)
                 pass
-                K = input[6]
-                fx = K[0, 0]
-                depth_np = fx * self.config.BASELINE / torch.clamp(disp1_np, min=1.0e-4)
+                camera = input[6]
+                fx = camera[0]
+                depth_np = fx * torch.tensor(self.config.BASELINE, dtype=torch.float).cuda() / torch.clamp(disp1_np, min=1.0e-4)
             else:
                 depth_np = self.depth(feature_maps)
                 if self.config.PREDICT_BOUNDARY:

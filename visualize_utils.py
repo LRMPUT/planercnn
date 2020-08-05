@@ -202,7 +202,7 @@ def visualizeBatchDetection(options, config, input_dict, detection_dict, indexOf
     image = images[0]
     cv2.imwrite(options.test_dir + '/' + ('%04d' % indexOffset) + '_image' + suffix + '.png', image[80:560])
     if writer is not None:
-        writer.add_image(('%04d' % indexOffset) + '_image' + suffix, image[80:560], dataformats='HWC')
+        writer.add_image(('vis/%04d' % indexOffset) + '_image' + suffix, image[80:560], dataformats='HWC')
 
     if 'warped_image' in input_dict:
         warped_images = input_dict['warped_image'].detach().cpu().numpy().transpose((0, 2, 3, 1))
@@ -228,7 +228,7 @@ def visualizeBatchDetection(options, config, input_dict, detection_dict, indexOf
         cv2.imwrite(options.test_dir + '/' + ('%04d' % indexOffset) + '_depth' + suffix + '.png',
                     drawDepthImage(depth_gt[80:560]))
         if writer is not None:
-            writer.add_image(('%04d' % indexOffset) + '_depth' + suffix, drawDepthImage(depth_gt[80:560]),
+            writer.add_image(('vis/%04d' % indexOffset) + '_depth' + suffix, drawDepthImage(depth_gt[80:560]),
                              dataformats='HWC')
 
     windows = (0, 0, images.shape[1], images.shape[2])
@@ -255,7 +255,7 @@ def visualizeBatchDetection(options, config, input_dict, detection_dict, indexOf
         cv2.imwrite(options.test_dir + '/' + ('%04d' % indexOffset) + '_segmentation' + suffix + '.png',
                     segmentation_image.astype(np.uint8)[80:560])
         if writer is not None:
-            writer.add_image(('%04d' % indexOffset) + '_segmentation_gt', segmentation_image.astype(np.uint8)[80:560],
+            writer.add_image(('vis/%04d' % indexOffset) + '_segmentation_gt', segmentation_image.astype(np.uint8)[80:560],
                              dataformats='HWC')
 
         if config.NUM_PARAMETER_CHANNELS > 0 and not config.OCCLUSION:
@@ -322,7 +322,7 @@ def visualizeBatchDetection(options, config, input_dict, detection_dict, indexOf
             options.test_dir + '/' + ('%04d' % indexOffset) + '_segmentation' + suffix + prediction_suffix + '.png',
             instance_image[80:560])
         if writer is not None:
-            writer.add_image(('%04d' % indexOffset) + '_segmentation_det', instance_image[80:560], dataformats='HWC')
+            writer.add_image(('vis/%04d' % indexOffset) + '_segmentation_det', instance_image[80:560], dataformats='HWC')
     else:
         image_dict['detection'] = np.zeros(image.shape, dtype=image.dtype)
         pass

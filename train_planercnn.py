@@ -14,6 +14,7 @@ from tqdm import tqdm
 import numpy as np
 import cv2
 import sys
+import shutil
 
 from models.model import *
 from models.refinement_net import *
@@ -27,6 +28,8 @@ from evaluate_utils import *
 from options import parse_args
 from config import PlaneConfig
 
+# from pytorch_memlab import MemReporter
+
     
 def train(options):
     if not os.path.exists(options.checkpoint_dir):
@@ -38,7 +41,10 @@ def train(options):
 
     config = PlaneConfig(options)
 
-    writer = SummaryWriter('runs/train')
+    summary_dir = 'runs/train'
+    if os.path.exists(summary_dir):
+        shutil.rmtree(summary_dir)
+    writer = SummaryWriter(summary_dir)
 
     dataset = ScenenetRgbdDataset(options, config, split='train', random=False, writer=writer)
     # dataset = PlaneDataset(options, config, split='train', random=False)
@@ -46,14 +52,16 @@ def train(options):
 
     print('the number of images', len(dataset))
 
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=0)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
 
     model = MaskRCNN(config)
     refine_model = RefineModel(options)
     model.cuda()
     model.train()    
     refine_model.cuda()
-    refine_model.train()    
+    refine_model.train()
+
+    # reporter = MemReporter(model)
 
     if options.restore == 1:
         ## Resume training
@@ -188,15 +196,31 @@ def train(options):
                 losses.append(normal_np_loss)
             else:
                 if config.PREDICT_STEREO:
-                    fx = input_pair[0]['camera'][0, 0]
+                    fx = input_pair[0]['camera'][0]
                     gt_disp = fx * torch.tensor(config.BASELINE, dtype=torch.float).cuda() / torch.clamp(gt_depth, min=1.0e-4)
                     mask = gt_disp < config.MAXDISP
-                    disp_np_loss = 0.5 * F.smooth_l1_loss(disp1_np_pred, gt_disp[mask], size_average=True) +\
-                                   0.7 * F.smooth_l1_loss(disp2_np_pred, gt_disp[mask], size_average=True) +\
-                                   F.smooth_l1_loss(disp3_np_pred, gt_disp[mask], size_average=True)
+                    disp_np_loss = 0.5 * F.smooth_l1_loss(disp1_np_pred[mask], gt_disp[mask], size_average=True) +\
+                                   0.7 * F.smooth_l1_loss(disp2_np_pred[mask], gt_disp[mask], size_average=True) +\
+                                   F.smooth_l1_loss(disp3_np_pred[mask], gt_disp[mask], size_average=True)
                     losses.append(disp_np_loss)
+
+                    normal_np_pred = None
+
                     if writer is not None and sampleIndex % 100 == 0:
-                        writer.add_scalar('disp_np_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
+                        writer.add_scalar('disp/disp_np_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
+
+                        disp_scale = 54.0
+                        writer.add_image('disp/image_left', unmold_image_torch(input_pair[0]['image'].squeeze(0), config), dataformats='CHW')
+                        writer.add_image('disp/image_right', unmold_image_torch(input_pair[1]['image'].squeeze(0), config), dataformats='CHW')
+                        # up to 15 m
+                        writer.add_image('disp/gt_depth', gt_depth.squeeze(0) / 15.0, dataformats='HW')
+                        writer.add_image('disp/gt_disp', gt_disp.squeeze(0) / disp_scale, dataformats='HW')
+                        writer.add_image('disp/disp1', disp1_np_pred.squeeze(0) / disp_scale, dataformats='HW')
+                        writer.add_image('disp/disp2', disp2_np_pred.squeeze(0) / disp_scale, dataformats='HW')
+                        writer.add_image('disp/disp3', disp3_np_pred.squeeze(0) / disp_scale, dataformats='HW')
+                        writer.add_image('disp/mask', mask.squeeze(0), dataformats='HW')
+                        # self.writer.add_image('disp_error', (np.abs(plane_depth - depth) * plane_mask) / 3.0,
+                        #                       dataformats='HW')
                 else:
                     depth_np_loss = l1LossMask(depth_np_pred[:, 80:560], gt_depth[:, 80:560], (gt_depth[:, 80:560] > 1e-4).float())
                     losses.append(depth_np_loss)
@@ -257,8 +281,6 @@ def train(options):
                 losses.append(depth_loss)
                 if writer is not None and sampleIndex % 100 == 0:
                     writer.add_scalar('depth_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
-                pass
-            continue
 
             if (len(detection_pair[0]['detection']) > 0 and len(detection_pair[0]['detection']) < 30) and 'refine' in options.suffix:
                 ## Use refinement network
@@ -302,7 +324,6 @@ def train(options):
                 
                 depth_inv = invertDepth(depth_gt)
                 depth_inv_small = depth_inv[:, :, ::4, ::4].contiguous()
-                
 
                 ## Generate supervision target for the refinement network
                 segmentation_one_hot = (segmentation == torch.arange(segmentation.max() + 1).cuda().view((-1, 1, 1, 1))).long()
@@ -315,7 +336,6 @@ def train(options):
                 masks_gt_large = (segmentation == segments_gt.view((-1, 1, 1))).float()
                 masks_gt_small = masks_gt_large[:, ::4, ::4]
                 planes_gt = input_dict['plane'][0][segments_gt]
-
 
                 ## Run the refinement network
                 results = refine_model(image, image_2, camera, masks_inp, detection_dict['detection'][:, 6:9], plane_depth, depth_np)
@@ -428,7 +448,9 @@ def train(options):
             data_iterator.set_description(status)
 
             loss.backward()
-            
+
+            # reporter.report()
+
             if (sampleIndex + 1) % options.batchSize == 0:
                 optimizer.step()
                 optimizer.zero_grad()

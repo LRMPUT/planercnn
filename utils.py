@@ -416,6 +416,10 @@ def unmold_image(normalized_images, config):
     return (normalized_images + config.MEAN_PIXEL).astype(np.uint8)
 
 
+def unmold_image_torch(normalized_images, config):
+    """Takes a image normalized with mold() and returns the original."""
+    return normalized_images + torch.tensor(config.MEAN_PIXEL).unsqueeze(dim=1).unsqueeze(dim=2).cuda()
+
 
 ## Visualization
 class ColorPalette:
