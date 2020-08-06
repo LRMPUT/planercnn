@@ -55,11 +55,11 @@ def train(options):
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
 
     model = MaskRCNN(config)
-    refine_model = RefineModel(options)
+    # refine_model = RefineModel(options)
     model.cuda()
     model.train()    
-    refine_model.cuda()
-    refine_model.train()
+    # refine_model.cuda()
+    # refine_model.train()
 
     # reporter = MemReporter(model)
 
@@ -67,7 +67,7 @@ def train(options):
         ## Resume training
         print('restore')
         model.load_state_dict(torch.load(options.checkpoint_dir + '/checkpoint.pth'))
-        refine_model.load_state_dict(torch.load(options.checkpoint_dir + '/checkpoint_refine.pth'))
+        # refine_model.load_state_dict(torch.load(options.checkpoint_dir + '/checkpoint_refine.pth'))
     elif options.restore == 2:
         ## Train upon Mask R-CNN weights
         model_path = options.MaskRCNNPath
@@ -97,18 +97,18 @@ def train(options):
     trainables_only_bn = [param for name, param in model.named_parameters() if param.requires_grad and 'bn' in name]
 
     model_names = [name for name, param in model.named_parameters()]
-    for name, param in refine_model.named_parameters():
-        assert(name not in model_names)
-        continue
+    # for name, param in refine_model.named_parameters():
+    #     assert(name not in model_names)
+    #     continue
     optimizer = optim.SGD([
         {'params': trainables_wo_bn, 'weight_decay': 0.0001},
         {'params': trainables_only_bn},
-        {'params': refine_model.parameters()}
+        # {'params': refine_model.parameters()}
     ], lr=options.LR, momentum=0.9)
 
-    if 'refine_only' in options.suffix:
-        optimizer = optim.Adam(refine_model.parameters(), lr = options.LR)
-        pass
+    # if 'refine_only' in options.suffix:
+    #     optimizer = optim.Adam(refine_model.parameters(), lr = options.LR)
+    #     pass
     
     if options.restore == 1 and os.path.exists(options.checkpoint_dir + '/optim.pth'):
         optimizer.load_state_dict(torch.load(options.checkpoint_dir + '/optim.pth'))        
@@ -155,7 +155,7 @@ def train(options):
                 [rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
                  target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks,
                  detection_gt_parameters, detection_gt_masks, rpn_rois, roi_features, roi_indices, feature_map,
-                 depth_np_pred, disp1_np_pred, disp2_np_pred, disp3_np_pred] = model.predict(
+                 depth_np_pred, disp1_np_pred] = model.predict(
                         [input_pair[0]['image'], input_pair[0]['image_meta'], input_pair[0]['class_ids'],
                          input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
                          input_pair[0]['camera'],
@@ -197,12 +197,13 @@ def train(options):
             else:
                 if config.PREDICT_STEREO:
                     fx = input_pair[0]['camera'][0]
-                    gt_disp = fx * torch.tensor(config.BASELINE, dtype=torch.float).cuda() / torch.clamp(gt_depth, min=1.0e-4)
+                    gt_disp = fx * torch.tensor(config.BASELINE, dtype=torch.float, requires_grad=False).cuda() / torch.clamp(gt_depth, min=1.0e-4)
                     mask = gt_disp < config.MAXDISP
-                    disp_np_loss = 0.5 * F.smooth_l1_loss(disp1_np_pred[mask], gt_disp[mask], size_average=True) +\
-                                   0.7 * F.smooth_l1_loss(disp2_np_pred[mask], gt_disp[mask], size_average=True) +\
-                                   F.smooth_l1_loss(disp3_np_pred[mask], gt_disp[mask], size_average=True)
-                    losses.append(disp_np_loss)
+                    # disp_np_loss = 0.5 * F.smooth_l1_loss(disp1_np_pred[mask], gt_disp[mask], size_average=True) +\
+                    #                0.7 * F.smooth_l1_loss(disp2_np_pred[mask], gt_disp[mask], size_average=True) +\
+                    #                F.smooth_l1_loss(disp3_np_pred[mask], gt_disp[mask], size_average=True)
+                    disp_np_loss = F.smooth_l1_loss(disp1_np_pred[mask], gt_disp[mask], size_average=True)
+                    losses.append(disp_np_loss * options.dispWeight)
 
                     normal_np_pred = None
 
@@ -216,8 +217,8 @@ def train(options):
                         writer.add_image('disp/gt_depth', gt_depth.squeeze(0) / 15.0, dataformats='HW')
                         writer.add_image('disp/gt_disp', gt_disp.squeeze(0) / disp_scale, dataformats='HW')
                         writer.add_image('disp/disp1', disp1_np_pred.squeeze(0) / disp_scale, dataformats='HW')
-                        writer.add_image('disp/disp2', disp2_np_pred.squeeze(0) / disp_scale, dataformats='HW')
-                        writer.add_image('disp/disp3', disp3_np_pred.squeeze(0) / disp_scale, dataformats='HW')
+                        # writer.add_image('disp/disp2', disp2_np_pred.squeeze(0) / disp_scale, dataformats='HW')
+                        # writer.add_image('disp/disp3', disp3_np_pred.squeeze(0) / disp_scale, dataformats='HW')
                         writer.add_image('disp/mask', mask.squeeze(0), dataformats='HW')
                         # self.writer.add_image('disp_error', (np.abs(plane_depth - depth) * plane_mask) / 3.0,
                         #                       dataformats='HW')
@@ -282,119 +283,119 @@ def train(options):
                 if writer is not None and sampleIndex % 100 == 0:
                     writer.add_scalar('depth_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
 
-            if (len(detection_pair[0]['detection']) > 0 and len(detection_pair[0]['detection']) < 30) and 'refine' in options.suffix:
-                ## Use refinement network
-                pose = sample[26][0].cuda()
-                pose = torch.cat([pose[0:3], pose[3:6] * pose[6]], dim=0)
-                pose_gt = torch.cat([pose[0:1], -pose[2:3], pose[1:2], pose[3:4], -pose[5:6], pose[4:5]], dim=0).unsqueeze(0)
-                camera = camera.unsqueeze(0)
-                c = 0
-                detection_dict, input_dict = detection_pair[c], input_pair[c]                
-                detections = detection_dict['detection']
-                detection_masks = detection_dict['masks']
-                image = (input_dict['image'] + config.MEAN_PIXEL_TENSOR.view((-1, 1, 1))) / 255.0 - 0.5
-                image_2 = (input_pair[1 - c]['image'] + config.MEAN_PIXEL_TENSOR.view((-1, 1, 1))) / 255.0 - 0.5
-                depth_gt = input_dict['depth'].unsqueeze(1)
-
-                masks_inp = torch.cat([detection_masks.unsqueeze(1), detection_dict['plane_XYZ']], dim=1)
-
-                segmentation = input_dict['segmentation']
-                plane_depth = detection_dict['depth']
-                depth_np = detection_dict['depth_np']
-                if 'large' not in options.suffix:
-                    ## Use 256x192 instead of 640x480
-                    detection_masks = torch.nn.functional.interpolate(detection_masks[:, 80:560].unsqueeze(1), size=(192, 256), mode='nearest').squeeze(1)
-                    image = torch.nn.functional.interpolate(image[:, :, 80:560], size=(192, 256), mode='bilinear')
-                    image_2 = torch.nn.functional.interpolate(image_2[:, :, 80:560], size=(192, 256), mode='bilinear')
-                    masks_inp = torch.nn.functional.interpolate(masks_inp[:, :, 80:560], size=(192, 256), mode='bilinear')
-                    depth_gt = torch.nn.functional.interpolate(depth_gt[:, :, 80:560], size=(192, 256), mode='nearest')
-                    segmentation = torch.nn.functional.interpolate(segmentation[:, 80:560].unsqueeze(1).float(), size=(192, 256), mode='nearest').squeeze().long()
-                    plane_depth = torch.nn.functional.interpolate(plane_depth[:, 80:560].unsqueeze(1).float(), size=(192, 256), mode='bilinear').squeeze(1)                    
-                    depth_np = torch.nn.functional.interpolate(depth_np[:, 80:560].unsqueeze(1), size=(192, 256), mode='bilinear').squeeze(1)
-                else:
-                    detection_masks = detection_masks[:, 80:560]
-                    image = image[:, :, 80:560]
-                    image_2 = image_2[:, :, 80:560]
-                    masks_inp = masks_inp[:, :, 80:560]
-                    depth_gt = depth_gt[:, :, 80:560]
-                    segmentation = segmentation[:, 80:560]
-                    plane_depth = plane_depth[:, 80:560]
-                    depth_np = depth_np[:, 80:560]
-                    pass
-                
-                depth_inv = invertDepth(depth_gt)
-                depth_inv_small = depth_inv[:, :, ::4, ::4].contiguous()
-
-                ## Generate supervision target for the refinement network
-                segmentation_one_hot = (segmentation == torch.arange(segmentation.max() + 1).cuda().view((-1, 1, 1, 1))).long()
-                intersection = (torch.round(detection_masks).long() * segmentation_one_hot).sum(-1).sum(-1)
-                max_intersection, segments_gt = intersection.max(0)
-                mapping = intersection.max(1)[1]
-                detection_areas = detection_masks.sum(-1).sum(-1)
-                valid_mask = (mapping[segments_gt] == torch.arange(len(segments_gt)).cuda()).float()
-
-                masks_gt_large = (segmentation == segments_gt.view((-1, 1, 1))).float()
-                masks_gt_small = masks_gt_large[:, ::4, ::4]
-                planes_gt = input_dict['plane'][0][segments_gt]
-
-                ## Run the refinement network
-                results = refine_model(image, image_2, camera, masks_inp, detection_dict['detection'][:, 6:9], plane_depth, depth_np)
-
-                plane_depth_loss = torch.zeros(1).cuda()            
-                depth_loss = torch.zeros(1).cuda()
-                plane_loss = torch.zeros(1).cuda()                        
-                mask_loss = torch.zeros(1).cuda()
-                flow_loss = torch.zeros(1).cuda()
-                flow_confidence_loss = torch.zeros(1).cuda()
-                pose_loss = torch.zeros(1).cuda()
-                for resultIndex, result in enumerate(results[1:]):
-                    if 'mask' in result:
-                        masks_pred = result['mask'][:, 0]
-                        if masks_pred.shape[-1] == masks_gt_large.shape[-1]:
-                            masks_gt = masks_gt_large
-                        else:
-                            masks_gt = masks_gt_small
-                            pass
-                        
-                        all_masks_gt = torch.cat([1 - masks_gt.max(dim=0, keepdim=True)[0], masks_gt], dim=0)
-                        segmentation = all_masks_gt.max(0)[1].view(-1)
-                        masks_logits = masks_pred.squeeze(1).transpose(0, 1).transpose(1, 2).contiguous().view((segmentation.shape[0], -1))
-                        detection_areas = all_masks_gt.sum(-1).sum(-1)
-                        detection_weight = detection_areas / detection_areas.sum()
-                        detection_weight = -torch.log(torch.clamp(detection_weight, min=1e-4, max=1 - 1e-4))
-                        if 'weight' in options.suffix:
-                            mask_loss += torch.nn.functional.cross_entropy(masks_logits, segmentation, weight=detection_weight)
-                        else:
-                            mask_loss += torch.nn.functional.cross_entropy(masks_logits, segmentation, weight=torch.cat([torch.ones(1).cuda(), valid_mask], dim=0))
-                            pass
-                        masks_pred = (masks_pred.max(0, keepdim=True)[1] == torch.arange(len(masks_pred)).cuda().long().view((-1, 1, 1))).float()[1:]
-                        pass                    
-                    continue
-                losses += [mask_loss + depth_loss + plane_depth_loss + plane_loss]
-                if writer is not None and sampleIndex % 100 == 0:
-                    writer.add_scalar('detection_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
-                
-                masks = results[-1]['mask'].squeeze(1)
-                all_masks = torch.softmax(masks, dim=0)
-                masks_small = all_masks[1:]
-                all_masks = torch.nn.functional.interpolate(all_masks.unsqueeze(1), size=(480, 640), mode='bilinear').squeeze(1)                        
-                all_masks = (all_masks.max(0, keepdim=True)[1] == torch.arange(len(all_masks)).cuda().long().view((-1, 1, 1))).float()
-                masks = all_masks[1:]
-                detection_masks = torch.zeros(detection_dict['masks'].shape).cuda()
-                detection_masks[:, 80:560] = masks
-                detection_dict['masks'] = detection_masks
-                results[-1]['mask'] = masks_small
-
-                camera = camera.squeeze(0)
-                
-                if 'refine_after' in options.suffix:
-                    ## Build the warping loss upon refined results
-                    XYZ_pred, detection_mask, plane_XYZ = calcXYZModule(config, camera, detections, detection_masks, detection_dict['depth_np'], return_individual=True)
-                    detection_dict['XYZ'] = XYZ_pred
-                    pass
-            else:
-                losses += [torch.zeros(1).cuda()]
-                pass
+            # if (len(detection_pair[0]['detection']) > 0 and len(detection_pair[0]['detection']) < 30) and 'refine' in options.suffix:
+            #     ## Use refinement network
+            #     pose = sample[26][0].cuda()
+            #     pose = torch.cat([pose[0:3], pose[3:6] * pose[6]], dim=0)
+            #     pose_gt = torch.cat([pose[0:1], -pose[2:3], pose[1:2], pose[3:4], -pose[5:6], pose[4:5]], dim=0).unsqueeze(0)
+            #     camera = camera.unsqueeze(0)
+            #     c = 0
+            #     detection_dict, input_dict = detection_pair[c], input_pair[c]
+            #     detections = detection_dict['detection']
+            #     detection_masks = detection_dict['masks']
+            #     image = (input_dict['image'] + config.MEAN_PIXEL_TENSOR.view((-1, 1, 1))) / 255.0 - 0.5
+            #     image_2 = (input_pair[1 - c]['image'] + config.MEAN_PIXEL_TENSOR.view((-1, 1, 1))) / 255.0 - 0.5
+            #     depth_gt = input_dict['depth'].unsqueeze(1)
+            #
+            #     masks_inp = torch.cat([detection_masks.unsqueeze(1), detection_dict['plane_XYZ']], dim=1)
+            #
+            #     segmentation = input_dict['segmentation']
+            #     plane_depth = detection_dict['depth']
+            #     depth_np = detection_dict['depth_np']
+            #     if 'large' not in options.suffix:
+            #         ## Use 256x192 instead of 640x480
+            #         detection_masks = torch.nn.functional.interpolate(detection_masks[:, 80:560].unsqueeze(1), size=(192, 256), mode='nearest').squeeze(1)
+            #         image = torch.nn.functional.interpolate(image[:, :, 80:560], size=(192, 256), mode='bilinear')
+            #         image_2 = torch.nn.functional.interpolate(image_2[:, :, 80:560], size=(192, 256), mode='bilinear')
+            #         masks_inp = torch.nn.functional.interpolate(masks_inp[:, :, 80:560], size=(192, 256), mode='bilinear')
+            #         depth_gt = torch.nn.functional.interpolate(depth_gt[:, :, 80:560], size=(192, 256), mode='nearest')
+            #         segmentation = torch.nn.functional.interpolate(segmentation[:, 80:560].unsqueeze(1).float(), size=(192, 256), mode='nearest').squeeze().long()
+            #         plane_depth = torch.nn.functional.interpolate(plane_depth[:, 80:560].unsqueeze(1).float(), size=(192, 256), mode='bilinear').squeeze(1)
+            #         depth_np = torch.nn.functional.interpolate(depth_np[:, 80:560].unsqueeze(1), size=(192, 256), mode='bilinear').squeeze(1)
+            #     else:
+            #         detection_masks = detection_masks[:, 80:560]
+            #         image = image[:, :, 80:560]
+            #         image_2 = image_2[:, :, 80:560]
+            #         masks_inp = masks_inp[:, :, 80:560]
+            #         depth_gt = depth_gt[:, :, 80:560]
+            #         segmentation = segmentation[:, 80:560]
+            #         plane_depth = plane_depth[:, 80:560]
+            #         depth_np = depth_np[:, 80:560]
+            #         pass
+            #
+            #     depth_inv = invertDepth(depth_gt)
+            #     depth_inv_small = depth_inv[:, :, ::4, ::4].contiguous()
+            #
+            #     ## Generate supervision target for the refinement network
+            #     segmentation_one_hot = (segmentation == torch.arange(segmentation.max() + 1).cuda().view((-1, 1, 1, 1))).long()
+            #     intersection = (torch.round(detection_masks).long() * segmentation_one_hot).sum(-1).sum(-1)
+            #     max_intersection, segments_gt = intersection.max(0)
+            #     mapping = intersection.max(1)[1]
+            #     detection_areas = detection_masks.sum(-1).sum(-1)
+            #     valid_mask = (mapping[segments_gt] == torch.arange(len(segments_gt)).cuda()).float()
+            #
+            #     masks_gt_large = (segmentation == segments_gt.view((-1, 1, 1))).float()
+            #     masks_gt_small = masks_gt_large[:, ::4, ::4]
+            #     planes_gt = input_dict['plane'][0][segments_gt]
+            #
+            #     ## Run the refinement network
+            #     results = refine_model(image, image_2, camera, masks_inp, detection_dict['detection'][:, 6:9], plane_depth, depth_np)
+            #
+            #     plane_depth_loss = torch.zeros(1).cuda()
+            #     depth_loss = torch.zeros(1).cuda()
+            #     plane_loss = torch.zeros(1).cuda()
+            #     mask_loss = torch.zeros(1).cuda()
+            #     flow_loss = torch.zeros(1).cuda()
+            #     flow_confidence_loss = torch.zeros(1).cuda()
+            #     pose_loss = torch.zeros(1).cuda()
+            #     for resultIndex, result in enumerate(results[1:]):
+            #         if 'mask' in result:
+            #             masks_pred = result['mask'][:, 0]
+            #             if masks_pred.shape[-1] == masks_gt_large.shape[-1]:
+            #                 masks_gt = masks_gt_large
+            #             else:
+            #                 masks_gt = masks_gt_small
+            #                 pass
+            #
+            #             all_masks_gt = torch.cat([1 - masks_gt.max(dim=0, keepdim=True)[0], masks_gt], dim=0)
+            #             segmentation = all_masks_gt.max(0)[1].view(-1)
+            #             masks_logits = masks_pred.squeeze(1).transpose(0, 1).transpose(1, 2).contiguous().view((segmentation.shape[0], -1))
+            #             detection_areas = all_masks_gt.sum(-1).sum(-1)
+            #             detection_weight = detection_areas / detection_areas.sum()
+            #             detection_weight = -torch.log(torch.clamp(detection_weight, min=1e-4, max=1 - 1e-4))
+            #             if 'weight' in options.suffix:
+            #                 mask_loss += torch.nn.functional.cross_entropy(masks_logits, segmentation, weight=detection_weight)
+            #             else:
+            #                 mask_loss += torch.nn.functional.cross_entropy(masks_logits, segmentation, weight=torch.cat([torch.ones(1).cuda(), valid_mask], dim=0))
+            #                 pass
+            #             masks_pred = (masks_pred.max(0, keepdim=True)[1] == torch.arange(len(masks_pred)).cuda().long().view((-1, 1, 1))).float()[1:]
+            #             pass
+            #         continue
+            #     losses += [mask_loss + depth_loss + plane_depth_loss + plane_loss]
+            #     if writer is not None and sampleIndex % 100 == 0:
+            #         writer.add_scalar('detection_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
+            #
+            #     masks = results[-1]['mask'].squeeze(1)
+            #     all_masks = torch.softmax(masks, dim=0)
+            #     masks_small = all_masks[1:]
+            #     all_masks = torch.nn.functional.interpolate(all_masks.unsqueeze(1), size=(480, 640), mode='bilinear').squeeze(1)
+            #     all_masks = (all_masks.max(0, keepdim=True)[1] == torch.arange(len(all_masks)).cuda().long().view((-1, 1, 1))).float()
+            #     masks = all_masks[1:]
+            #     detection_masks = torch.zeros(detection_dict['masks'].shape).cuda()
+            #     detection_masks[:, 80:560] = masks
+            #     detection_dict['masks'] = detection_masks
+            #     results[-1]['mask'] = masks_small
+            #
+            #     camera = camera.squeeze(0)
+            #
+            #     if 'refine_after' in options.suffix:
+            #         ## Build the warping loss upon refined results
+            #         XYZ_pred, detection_mask, plane_XYZ = calcXYZModule(config, camera, detections, detection_masks, detection_dict['depth_np'], return_individual=True)
+            #         detection_dict['XYZ'] = XYZ_pred
+            #         pass
+            # else:
+            #     losses += [torch.zeros(1).cuda()]
+            #     pass
 
             ## The warping loss
             for c in range(1, 2):
@@ -459,9 +460,9 @@ def train(options):
             if sampleIndex % 500 < options.batchSize or options.visualizeMode == 'debug':
                 ## Visualize intermediate results
                 visualizeBatchPair(options, config, input_pair, detection_pair, indexOffset=sampleIndex % 500, writer=writer)
-                if (len(detection_pair[0]['detection']) > 0 and len(detection_pair[0]['detection']) < 30) and 'refine' in options.suffix:
-                    visualizeBatchRefinement(options, config, input_pair[0], [{'mask': masks_gt, 'plane': planes_gt}, ] + results, indexOffset=sampleIndex % 500, concise=True)
-                    pass
+                # if (len(detection_pair[0]['detection']) > 0 and len(detection_pair[0]['detection']) < 30) and 'refine' in options.suffix:
+                #     visualizeBatchRefinement(options, config, input_pair[0], [{'mask': masks_gt, 'plane': planes_gt}, ] + results, indexOffset=sampleIndex % 500, concise=True)
+                #     pass
                 if options.visualizeMode == 'debug' and sampleIndex % 500 >= options.batchSize - 1:
                     exit(1)
                     pass
@@ -471,7 +472,7 @@ def train(options):
                 ## Save models
                 print('loss', np.array(epoch_losses).mean(0))
                 torch.save(model.state_dict(), options.checkpoint_dir + '/checkpoint.pth')
-                torch.save(refine_model.state_dict(), options.checkpoint_dir + '/checkpoint_refine.pth')                
+                # torch.save(refine_model.state_dict(), options.checkpoint_dir + '/checkpoint_refine.pth')
                 torch.save(optimizer.state_dict(), options.checkpoint_dir + '/optim.pth')
                 pass
             continue

@@ -89,6 +89,9 @@ def parse_args():
     parser.add_argument('--numInputChannels', dest='numInputChannels',
                         help='the number of classes',
                         default=4, type=int)
+    parser.add_argument('--dispWeight', dest='dispWeight',
+                        help='weight of disparity loss',
+                        default=0.1, type=float)
     ## Flags
     parser.add_argument('--visualizeMode', dest='visualizeMode',
                         help='visualization mode',

@@ -193,12 +193,12 @@ class ScenenetRgbdScene():
 
             if depth_error > 0.1:
                 if self.writer is not None:
-                    self.writer.add_image('image', image, dataformats='HWC')
-                    # up to 10 m
-                    self.writer.add_image('depth', depth / 15.0, dataformats='HW')
-                    self.writer.add_image('plane_depth', plane_depth / 15.0, dataformats='HW')
-                    self.writer.add_image('plane_mask', plane_mask, dataformats='HW')
-                    self.writer.add_image('depth_error', (np.abs(plane_depth - depth) * plane_mask) / 3.0,
+                    self.writer.add_image('scene/image', image, dataformats='HWC')
+                    # up to 15 m
+                    self.writer.add_image('scene/depth', depth / 15.0, dataformats='HW')
+                    self.writer.add_image('scene/plane_depth', plane_depth / 15.0, dataformats='HW')
+                    self.writer.add_image('scene/plane_mask', plane_mask, dataformats='HW')
+                    self.writer.add_image('scene/depth_error', (np.abs(plane_depth - depth) * plane_mask) / 3.0,
                                           dataformats='HW')
                     self.writer.flush()
                     pass
