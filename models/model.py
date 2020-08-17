@@ -1852,7 +1852,7 @@ class MaskRCNN(nn.Module):
             })
         return results
 
-    def predict(self, input, mode, use_nms=1, use_refinement=False, return_feature_map=False):
+    def predict(self, input, mode, use_nms=1, use_refinement=False, return_feature_map=False, writer=None):
         molded_images = input[0]
         image_metas = input[1]
 
@@ -1888,6 +1888,14 @@ class MaskRCNN(nn.Module):
                 camera = input[6]
                 fx = camera[0]
                 depth_np = fx * torch.tensor(self.config.BASELINE, dtype=torch.float, requires_grad=False).cuda() / torch.clamp(disp1_np, min=1.0e-4)
+
+                if writer is not None:
+                    min_l = p2_out.min()
+                    max_l = p2_out.max()
+                    min_r = p2_out_r.min()
+                    max_r = p2_out_r.max()
+                    writer.add_image('disp/feat_l', (p2_out[0, 0] - min_l)/(max_l - min_l), dataformats='HW')
+                    writer.add_image('disp/feat_r', (p2_out_r[0, 0] - min_r)/(max_r - min_r), dataformats='HW')
             else:
                 depth_np = self.depth(feature_maps)
                 if self.config.PREDICT_BOUNDARY:
@@ -2177,7 +2185,7 @@ class MaskRCNN(nn.Module):
             if self.config.PREDICT_STEREO:
                 info.append(depth_np)
                 if self.training:
-                    info.extend([disp1_np])
+                    info.append(disp1_np)
             else:
                 info.append(depth_np)
                 if self.config.PREDICT_BOUNDARY:

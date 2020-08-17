@@ -161,7 +161,7 @@ def train(options):
                          input_pair[0]['camera'],
                          input_pair[1]['image']],
                         mode='training_detection', use_nms=2, use_refinement='refinement' in options.suffix,
-                        return_feature_map=True)
+                        return_feature_map=True, writer=writer if sampleIndex % 100 == 0 else None)
             else:
                 [rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
                  target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks,
@@ -210,7 +210,7 @@ def train(options):
                     if writer is not None and sampleIndex % 100 == 0:
                         writer.add_scalar('disp/disp_np_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
 
-                        disp_scale = 54.0
+                        disp_scale = 192.0
                         writer.add_image('disp/image_left', unmold_image_torch(input_pair[0]['image'].squeeze(0), config), dataformats='CHW')
                         writer.add_image('disp/image_right', unmold_image_torch(input_pair[1]['image'].squeeze(0), config), dataformats='CHW')
                         # up to 15 m
