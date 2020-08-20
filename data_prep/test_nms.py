@@ -164,6 +164,8 @@ def test_planes(scene_id, config):
                     if iou1 > merge_thresh or iou2 > merge_thresh:
                         keep_ds.union(i, j)
 
+
+
         color_map = utils.ColorPalette(keep.shape[0]).getColorMap()
         for idx in range(keep.shape[0]):
             pt1 = anchors[keep[idx], 0:2].numpy()
@@ -176,8 +178,8 @@ def test_planes(scene_id, config):
                 iou = calc_iou(anchors[keep[idx - 1]], anchors[keep[idx]])
                 # print('keep[idx - 1] = ', keep[idx - 1], ', keep[idx] = ', keep[idx])
                 print('iou = ', iou, ', score1 = ', scores[keep[idx - 1]], ', score2 = ', scores[keep[idx]])
-            cv2.imshow('planes', im)
-            cv2.waitKey()
+        cv2.imshow('planes', im)
+        cv2.waitKey()
 
 
 def main():

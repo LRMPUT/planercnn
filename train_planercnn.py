@@ -30,7 +30,7 @@ from config import PlaneConfig
 
 # from pytorch_memlab import MemReporter
 
-    
+
 def train(options):
     if not os.path.exists(options.checkpoint_dir):
         os.system("mkdir -p %s"%options.checkpoint_dir)
@@ -47,17 +47,19 @@ def train(options):
     writer = SummaryWriter(summary_dir)
 
     dataset = ScenenetRgbdDataset(options, config, split='train', random=False, writer=writer)
+    dataset_test = ScenenetRgbdDataset(options, config, split='test', random=False, writer=writer)
     # dataset = PlaneDataset(options, config, split='train', random=False)
     # dataset_test = PlaneDataset(options, config, split='test', random=False)
 
     print('the number of images', len(dataset))
 
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
+    dataloader_test = DataLoader(dataset_test, batch_size=1, shuffle=True)
 
     model = MaskRCNN(config)
     # refine_model = RefineModel(options)
     model.cuda()
-    model.train()    
+    model.train()
     # refine_model.cuda()
     # refine_model.train()
 
@@ -113,15 +115,16 @@ def train(options):
     if options.restore == 1 and os.path.exists(options.checkpoint_dir + '/optim.pth'):
         optimizer.load_state_dict(torch.load(options.checkpoint_dir + '/optim.pth'))        
         pass
-    
+
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.1)
     for epoch in range(options.numEpochs):
         epoch_losses = []
         data_iterator = tqdm(dataloader, total=len(dataset) + 1, disable=True)
 
         optimizer.zero_grad()
 
-        for sampleIndex, sample in enumerate(data_iterator):
-        # for sampleIndex, sample in enumerate(dataloader):
+        # for sampleIndex, sample in enumerate(data_iterator):
+        for sampleIndex, sample in enumerate(dataloader):
             losses = []
 
             input_pair = []
@@ -202,7 +205,7 @@ def train(options):
                     # disp_np_loss = 0.5 * F.smooth_l1_loss(disp1_np_pred[mask], gt_disp[mask], size_average=True) +\
                     #                0.7 * F.smooth_l1_loss(disp2_np_pred[mask], gt_disp[mask], size_average=True) +\
                     #                F.smooth_l1_loss(disp3_np_pred[mask], gt_disp[mask], size_average=True)
-                    disp_np_loss = F.smooth_l1_loss(disp1_np_pred[mask], gt_disp[mask], size_average=True)
+                    disp_np_loss = F.smooth_l1_loss(disp1_np_pred[mask], gt_disp[mask], reduction='mean')
                     losses.append(disp_np_loss * options.dispWeight)
 
                     normal_np_pred = None
@@ -220,8 +223,11 @@ def train(options):
                         # writer.add_image('disp/disp2', disp2_np_pred.squeeze(0) / disp_scale, dataformats='HW')
                         # writer.add_image('disp/disp3', disp3_np_pred.squeeze(0) / disp_scale, dataformats='HW')
                         writer.add_image('disp/mask', mask.squeeze(0), dataformats='HW')
-                        # self.writer.add_image('disp_error', (np.abs(plane_depth - depth) * plane_mask) / 3.0,
-                        #                       dataformats='HW')
+                        writer.add_image('disp/error',
+                                         torch.clamp(F.smooth_l1_loss(disp1_np_pred.squeeze(0),
+                                                                      gt_disp.squeeze(0),
+                                                                      reduction='none'), max=10.0) / 10.0,
+                                         dataformats='HW')
                 else:
                     depth_np_loss = l1LossMask(depth_np_pred[:, 80:560], gt_depth[:, 80:560], (gt_depth[:, 80:560] > 1e-4).float())
                     losses.append(depth_np_loss)
@@ -443,8 +449,8 @@ def train(options):
                 continue
 
 
-            sys.stdout.write('\r ' + str(sampleIndex) + ' ' + status)
-            sys.stdout.flush()
+            # sys.stdout.write('\r ' + str(sampleIndex) + ' ' + status)
+            # sys.stdout.flush()
             
             data_iterator.set_description(status)
 
@@ -476,6 +482,7 @@ def train(options):
                 torch.save(optimizer.state_dict(), options.checkpoint_dir + '/optim.pth')
                 pass
             continue
+        scheduler.step()
         continue
     return
 

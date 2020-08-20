@@ -58,7 +58,7 @@ def parse_args():
                         default=1e-5, type=float)
     parser.add_argument('--numEpochs', dest='numEpochs',
                         help='the number of epochs',
-                        default=1000, type=int)
+                        default=10, type=int)
     parser.add_argument('--startEpoch', dest='startEpoch',
                         help='starting epoch index',
                         default=-1, type=int)

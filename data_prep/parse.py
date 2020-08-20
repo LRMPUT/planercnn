@@ -1180,6 +1180,23 @@ def load_image(scene_id, frame_num, stereo_suffix):
     return img
 
 
+def load_segm(scene_id, frame_num, stereo_suffix):
+    segm_file = os.path.join(ROOT_FOLDER,
+                            scene_id,
+                            'annotation',
+                            'segmentation_' + stereo_suffix,
+                            frame_num + '.png')
+    segm = cv2.imread(segm_file, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+    if segm is None:
+        print("Could not read segm file for %s %s %s" % (scene_id, frame_num, stereo_suffix))
+    segm = (segm[:, :, 2] * 256 * 256 + segm[:, :, 1] * 256 + segm[:, :, 0]) // 100 - 1
+    planes = np.load(os.path.join(ROOT_FOLDER,
+                            scene_id,
+                            'annotation',
+                            'planes.npy'))
+    return segm, planes
+
+
 def load_intrinsics(scene_id, frame_num):
     calib_file = os.path.join(ROOT_FOLDER,
                               scene_id,
@@ -1267,9 +1284,9 @@ def processFrame(scene_id, frame_num, invalid_list):
         cv2.imwrite(dump_norm_y_file, ((norm[:, :, 1] + 1.0) * 10000.0).astype(np.uint16))
         cv2.imwrite(dump_norm_z_file, ((norm[:, :, 2] + 1.0) * 10000.0).astype(np.uint16))
 
-    if (not check_depth(depth[0])) or (not check_depth(depth[1])):
-        print('Excluding %s %s' % (scene_id, frame_num))
-        invalid_list[int(frame_num)] = True
+    # if (not check_depth(depth[0])) or (not check_depth(depth[1])):
+    #     print('Excluding %s %s' % (scene_id, frame_num))
+    #     invalid_list[int(frame_num)] = True
 
 
 def compute_depth_and_normals(scene_id):
@@ -1281,11 +1298,50 @@ def compute_depth_and_normals(scene_id):
     for frame_num in frame_nums:
         processFrame(scene_id, frame_num, invalid_list)
 
+    # with open(os.path.join(ROOT_FOLDER, scene_id, 'invalid_frames.txt'), 'w') as inv_file:
+    #     for i, is_invalid in enumerate(invalid_list):
+    #         if is_invalid:
+    #             inv_file.write('%06d\n' % i)
+
+
+def check_frame(scene_id, frame_num, stereo_prefix):
+    image = load_image(scene_id, frame_num, stereo_prefix)
+    segm, planes = load_segm(scene_id, frame_num, stereo_prefix)
+
+    segments, counts = np.unique(segm, return_counts=True)
+    big_planes = 0
+    small_planes = 0
+    for idx, seg in enumerate(segments):
+        if seg < 65535 and np.linalg.norm(planes[seg]) > 1e-4:
+            if counts[idx] > 100*100:
+                big_planes += 1
+            elif counts[idx] > 500:
+                small_planes += 1
+
+    avg_int = np.mean(np.max(image, axis=-1))
+
+    valid = (big_planes >= 2 and (small_planes + big_planes) >= 4 and 50.0 < avg_int < 200.0)
+    if not valid:
+        print('Excluding %s %s' % (scene_id, frame_num), 'avg_int = ', avg_int, 'big_planes = ', big_planes, 'small_planes = ', small_planes)
+
+    return valid
+
+
+def remove_invalid(scene_id):
+    segm_file_list = sorted(os.listdir(os.path.join(ROOT_FOLDER, scene_id, 'annotation', 'segmentation_left')))
+    frame_nums = [range_file.replace('.png', '') for range_file in segm_file_list]
+    max_frame_num = max([int(frame_num) for frame_num in frame_nums])
+    invalid_list = [False for _ in range(max_frame_num + 1)]
+
+    for frame_num in frame_nums:
+        if not (check_frame(scene_id, frame_num, stereoSuffixes[0]) and check_frame(scene_id, frame_num, stereoSuffixes[1])):
+            # print('Excluding %s %s' % (scene_id, frame_num))
+            invalid_list[int(frame_num)] = True
+
     with open(os.path.join(ROOT_FOLDER, scene_id, 'invalid_frames.txt'), 'w') as inv_file:
         for i, is_invalid in enumerate(invalid_list):
             if is_invalid:
                 inv_file.write('%06d\n' % i)
-
 
 def select_split(scene_ids, invalid_frames, idx, sel_scenes, sel_frames, target_num_frames):
     cur_num_frames = 0
@@ -1315,7 +1371,7 @@ def select_splits(scene_ids):
         with open(os.path.join(ROOT_FOLDER, scene_id, 'invalid_frames.txt'), 'r') as inv_file:
             invalid_frames.append(inv_file.read().splitlines())
 
-    num_train = 45000
+    num_train = 35000
     num_test = 2000
 
     idx = 0
@@ -1398,6 +1454,9 @@ def main():
                 len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_left/*.txt')):
             print('computing depth and normals')
             compute_depth_and_normals(scene_id)
+
+        # print('removing invalid frames')
+        # remove_invalid(scene_id)
 
         continue
 

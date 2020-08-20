@@ -200,6 +200,8 @@ class ScenenetRgbdScene():
                     self.writer.add_image('scene/plane_mask', plane_mask, dataformats='HW')
                     self.writer.add_image('scene/depth_error', (np.abs(plane_depth - depth) * plane_mask) / 3.0,
                                           dataformats='HW')
+                    self.writer.add_text('scene/name', self.scene_id + ' ' + frame_num + ' ' + str(cam_idx))
+                    print(self.scene_id + ' ' + frame_num + ' ' + str(cam_idx))
                     self.writer.flush()
                     pass
 

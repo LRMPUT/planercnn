@@ -66,9 +66,10 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
             #     continue
             
             try:
-                # left image
+            # left image
                 image_1, planes_1, plane_info_1, segmentation_1, depth_1, camera_1, extrinsics_1, semantics_1 = scene[frame_num, 0]
-            except:                
+            except Exception as e:
+                print('Exception: ', e)
                 if self.write_invalid_indices:
                     print('invalid')
                     print(str(index) + ' ' + str(sceneIndex) + ' ' + str(frame_num) + '\n', file=open(self.dataFolder + '/invalid_indices_' + self.split + '.txt', 'a'))
@@ -83,7 +84,8 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
             try:
                 # right image
                 image_2, planes_2, plane_info_2, segmentation_2, depth_2, camera_2, extrinsics_2, semantics_2 = scene[frame_num, 1]
-            except:
+            except Exception as e:
+                print('Exception: ', e)
                 continue
             
             info_2 = [image_2, planes_2, plane_info_2, segmentation_2, depth_2, camera_2, extrinsics_2, semantics_2]
