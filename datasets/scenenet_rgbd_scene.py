@@ -202,6 +202,8 @@ class ScenenetRgbdScene():
                                           dataformats='HW')
                     self.writer.add_text('scene/name', self.scene_id + ' ' + frame_num + ' ' + str(cam_idx))
                     print(self.scene_id + ' ' + frame_num + ' ' + str(cam_idx))
+                    # print(planes)
+                    # print(planes_global)
                     self.writer.flush()
                     pass
 

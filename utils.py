@@ -509,7 +509,7 @@ def calcPlaneDepths(planes, width, height, camera, max_depth=20):
     planeNormals = planes / np.maximum(planeOffsets, 1e-4)
 
     normalXYZ = np.dot(ranges, planeNormals.transpose())
-    normalXYZ[normalXYZ == 0] = 1e-4
+    normalXYZ[normalXYZ < 1e-4] = 1e-4
     planeDepths = planeOffsets.squeeze(-1) / normalXYZ
     if max_depth > 0:
         planeDepths = np.clip(planeDepths, 0, max_depth)

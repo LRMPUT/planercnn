@@ -47,14 +47,14 @@ def train(options):
     writer = SummaryWriter(summary_dir)
 
     dataset = ScenenetRgbdDataset(options, config, split='train', random=False, writer=writer)
-    dataset_test = ScenenetRgbdDataset(options, config, split='test', random=False, writer=writer)
+    # dataset_test = ScenenetRgbdDataset(options, config, split='test', random=False, writer=writer)
     # dataset = PlaneDataset(options, config, split='train', random=False)
     # dataset_test = PlaneDataset(options, config, split='test', random=False)
 
     print('the number of images', len(dataset))
 
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
-    dataloader_test = DataLoader(dataset_test, batch_size=1, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
+    # dataloader_test = DataLoader(dataset_test, batch_size=1, shuffle=True)
 
     model = MaskRCNN(config)
     # refine_model = RefineModel(options)
