@@ -1324,6 +1324,10 @@ class DepthStereo(nn.Module):
                                       nn.ReLU(inplace=True),
                                       nn.Conv3d(32, 1, kernel_size=3, padding=1, stride=1, bias=False))
 
+        # self.classify = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
+        #                               nn.ReLU(inplace=True),
+        #                               convbn_3d(32, 1, 3, 1, 1))
+
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -1385,7 +1389,7 @@ class DepthStereo(nn.Module):
         cost = self.classify(cost0)
         cost = F.upsample(cost, [self.maxdisp, self.im_h, self.im_w], mode='trilinear')
         cost = torch.squeeze(cost, 1)
-        pred = F.softmax(cost)
+        pred = F.softmax(cost, dim=1)
         pred = disparityregression(self.maxdisp)(pred)
 
         return pred
@@ -1863,7 +1867,7 @@ class MaskRCNN(nn.Module):
             ## Set batchnorm always in eval mode during training
             def set_bn_eval(m):
                 classname = m.__class__.__name__
-                if classname.find('BatchNorm') != -1:
+                if classname.find('BatchNorm2d') != -1:
                     m.eval()
 
             self.apply(set_bn_eval)

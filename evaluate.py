@@ -21,6 +21,7 @@ from models.model import *
 from models.refinement_net import RefineModel
 from models.modules import *
 from datasets.plane_stereo_dataset import PlaneDataset
+from datasets.scenenet_rgbd_stereo_dataset import ScenenetRgbdDataset
 from datasets.inference_dataset import InferenceDataset
 from datasets.nyu_dataset import NYUDataset
 from utils import *
@@ -87,29 +88,63 @@ class PlaneRCNNDetector():
         return
 
     def detect(self, sample):
-
         input_pair = []
         detection_pair = []
         camera = sample[30][0].cuda()
-        for indexOffset in [0, ]:
-            images, image_metas, rpn_match, rpn_bbox, gt_class_ids, gt_boxes, gt_masks, gt_parameters, gt_depth, extrinsics, planes, gt_segmentation = sample[indexOffset + 0].cuda(), sample[indexOffset + 1].numpy(), sample[indexOffset + 2].cuda(), sample[indexOffset + 3].cuda(), sample[indexOffset + 4].cuda(), sample[indexOffset + 5].cuda(), sample[indexOffset + 6].cuda(), sample[indexOffset + 7].cuda(), sample[indexOffset + 8].cuda(), sample[indexOffset + 9].cuda(), sample[indexOffset + 10].cuda(), sample[indexOffset + 11].cuda()
-            rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox, target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks, detection_gt_parameters, detection_gt_masks, rpn_rois, roi_features, roi_indices, depth_np_pred = self.model.predict([images, image_metas, gt_class_ids, gt_boxes, gt_masks, gt_parameters, camera], mode='inference_detection', use_nms=2, use_refinement=True)
+        for indexOffset in [0, 13]:
+            images, image_metas, rpn_match, rpn_bbox, gt_class_ids, gt_boxes, gt_masks, gt_parameters, gt_depth, extrinsics, gt_plane, gt_segmentation, plane_indices = \
+                sample[indexOffset + 0].cuda(), sample[indexOffset + 1].numpy(), sample[indexOffset + 2].cuda(), sample[
+                    indexOffset + 3].cuda(), sample[indexOffset + 4].cuda(), sample[indexOffset + 5].cuda(), sample[
+                    indexOffset + 6].cuda(), sample[indexOffset + 7].cuda(), sample[indexOffset + 8].cuda(), sample[
+                    indexOffset + 9].cuda(), sample[indexOffset + 10].cuda(), sample[indexOffset + 11].cuda(), sample[
+                    indexOffset + 12].cuda()
 
-            if len(detections) > 0:
-                detections, detection_masks = unmoldDetections(self.config, camera, detections, detection_masks, depth_np_pred, debug=False)
-                pass
+            input_pair.append({'image': images,
+                               'image_meta': image_metas,
+                               'depth': gt_depth,
+                               'mask': gt_masks,
+                               'bbox': gt_boxes,
+                               'extrinsics': extrinsics,
+                               'segmentation': gt_segmentation,
+                               'class_ids': gt_class_ids,
+                               'parameters': gt_parameters,
+                               'plane': gt_plane,
+                               'rpn_match': rpn_match,
+                               'rpn_bbox': rpn_bbox,
+                               'camera': camera})
 
-            XYZ_pred, detection_mask, plane_XYZ = calcXYZModule(self.config, camera, detections, detection_masks, depth_np_pred, return_individual=True)
-            detection_mask = detection_mask.unsqueeze(0)
+        if self.config.PREDICT_STEREO:
+            [rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
+             target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks,
+             detection_gt_parameters, detection_gt_masks, rpn_rois, roi_features, roi_indices,
+             depth_np_pred, disp1_np_pred] = self.model.predict(
+                    [input_pair[0]['image'], input_pair[0]['image_meta'], input_pair[0]['class_ids'],
+                     input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
+                     input_pair[0]['camera'],
+                     input_pair[1]['image']],
+                    mode='training_detection', use_nms=2, use_refinement=True)
+        else:
+            [rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
+             target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks,
+             detection_gt_parameters, detection_gt_masks, rpn_rois, roi_features, roi_indices,
+             depth_np_pred] = self.model.predict(
+                    [images, image_metas, gt_class_ids, gt_boxes, gt_masks, gt_parameters, camera],
+                    mode='inference_detection', use_nms=2, use_refinement=True)
 
-            input_pair.append({'image': images, 'depth': gt_depth, 'mask': gt_masks, 'bbox': gt_boxes, 'extrinsics': extrinsics, 'segmentation': gt_segmentation, 'camera': camera})
+        if len(detections) > 0:
+            detections, detection_masks = unmoldDetections(self.config, camera, detections, detection_masks, depth_np_pred, debug=False)
+            pass
 
-            if 'nyu_dorn_only' in self.options.dataset:
-                XYZ_pred[1:2] = sample[27].cuda()
-                pass
+        XYZ_pred, detection_mask, plane_XYZ = calcXYZModule(self.config, camera, detections, detection_masks, depth_np_pred, return_individual=True)
+        detection_mask = detection_mask.unsqueeze(0)
 
-            detection_pair.append({'XYZ': XYZ_pred, 'depth': XYZ_pred[1:2], 'mask': detection_mask, 'detection': detections, 'masks': detection_masks, 'depth_np': depth_np_pred, 'plane_XYZ': plane_XYZ})
-            continue
+        input_pair.append({'image': images, 'depth': gt_depth, 'mask': gt_masks, 'bbox': gt_boxes, 'extrinsics': extrinsics, 'segmentation': gt_segmentation, 'camera': camera})
+
+        if 'nyu_dorn_only' in self.options.dataset:
+            XYZ_pred[1:2] = sample[27].cuda()
+            pass
+
+        detection_pair.append({'XYZ': XYZ_pred, 'depth': XYZ_pred[1:2], 'mask': detection_mask, 'detection': detections, 'masks': detection_masks, 'depth_np': depth_np_pred, 'plane_XYZ': plane_XYZ})
 
         if ('refine' in self.modelType or 'refine' in self.options.suffix):
             pose = sample[26][0].cuda()
@@ -357,6 +392,8 @@ def evaluate(options):
 
     if options.dataset == '':
         dataset = PlaneDataset(options, config, split='test', random=False, load_semantics=False)
+    elif options.dataset == 'scenenet_rgbd':
+        dataset = ScenenetRgbdDataset(options, config, split='test', random=False)
     elif options.dataset == 'occlusion':
         config_dataset = copy.deepcopy(config)
         config_dataset.OCCLUSION = False

@@ -509,7 +509,8 @@ def calcPlaneDepths(planes, width, height, camera, max_depth=20):
     planeNormals = planes / np.maximum(planeOffsets, 1e-4)
 
     normalXYZ = np.dot(ranges, planeNormals.transpose())
-    normalXYZ[normalXYZ < 1e-4] = 1e-4
+    # normalXYZ[normalXYZ < 1e-4] = 1e-4
+    normalXYZ[normalXYZ == 0] = 1e-4
     planeDepths = planeOffsets.squeeze(-1) / normalXYZ
     if max_depth > 0:
         planeDepths = np.clip(planeDepths, 0, max_depth)
@@ -688,7 +689,7 @@ def fit_plane_torch(points):
     if points.shape[0] == points.shape[1]:
         return torch.solve(torch.ones(points.shape[0], 1), points)[0]
     else:
-        return torch.lstsq(torch.ones(points.shape[0], 1), points)[0]
+        return torch.lstsq(torch.ones(points.shape[0], 1), points)[0][0:3, 0]
     return
 
 
@@ -720,7 +721,9 @@ def fit_plane_ransac(points):
         if cur_inliers.float() / points.shape[0] > 0.9:
             break
 
-    return best_inliers_mask
+    best_plane = fit_plane_torch(points[best_inliers_mask])
+
+    return best_inliers_mask, best_plane
 
 
 def calc_points_depth(depth, K):
