@@ -53,7 +53,7 @@ def train(options):
 
     print('the number of images', len(dataset))
 
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
     # dataloader_test = DataLoader(dataset_test, batch_size=1, shuffle=True)
 
     model = MaskRCNN(config)
@@ -172,7 +172,7 @@ def train(options):
                  depth_np_pred] = model.predict(
                         [input_pair[0]['image'], input_pair[0]['image_meta'], input_pair[0]['class_ids'],
                          input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
-                         input_pair[0]['camera']],
+                         input_pair[0]['camera'], input_pair[0]['depth']],
                         mode='training_detection', use_nms=2, use_refinement='refinement' in options.suffix,
                         return_feature_map=True)
 

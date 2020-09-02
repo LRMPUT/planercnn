@@ -1343,6 +1343,7 @@ def remove_invalid(scene_id):
             if is_invalid:
                 inv_file.write('%06d\n' % i)
 
+
 def select_split(scene_ids, invalid_frames, idx, sel_scenes, sel_frames, target_num_frames):
     cur_num_frames = 0
     while idx < len(scene_ids) and cur_num_frames < target_num_frames:
@@ -1371,7 +1372,7 @@ def select_splits(scene_ids):
         with open(os.path.join(ROOT_FOLDER, scene_id, 'invalid_frames.txt'), 'r') as inv_file:
             invalid_frames.append(inv_file.read().splitlines())
 
-    num_train = 35000
+    num_train = 2000
     num_test = 2000
 
     idx = 0
@@ -1403,6 +1404,7 @@ def main():
 
     scene_ids = fnmatch.filter(os.listdir(ROOT_FOLDER), 'scene0???_00')
     scene_ids = sorted(scene_ids)
+    scene_ids = ['scene0400_00']
     print(scene_ids)
 
     np.random.seed(13)
@@ -1439,14 +1441,14 @@ def main():
         if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation_left/*.png')) < len(
                 glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_left/*.txt')):
             print('rendering left ', scene_id)
-            cmd = './data_prep/Renderer/build/Renderer --cam_name=left --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
+            cmd = './data_prep/Renderer/build/Renderer --cam_name=left --frame_stride=25 --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
             os.system(cmd)
             pass
 
         if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation_right/*.png')) < len(
                 glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_right/*.txt')):
             print('rendering right ', scene_id)
-            cmd = './data_prep/Renderer/build/Renderer --cam_name=right --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
+            cmd = './data_prep/Renderer/build/Renderer --cam_name=right --frame_stride=25 --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
             os.system(cmd)
             pass
 

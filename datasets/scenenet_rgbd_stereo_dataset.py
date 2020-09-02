@@ -70,6 +70,7 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
                 image_1, planes_1, plane_info_1, segmentation_1, depth_1, camera_1, extrinsics_1, semantics_1 = scene[frame_num, 0]
             except Exception as e:
                 print('Exception: ', e)
+                continue
             except:
                 print('Exception for first %s %s' % (scene.scene_id, frame_num))
                 if self.write_invalid_indices:

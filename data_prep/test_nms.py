@@ -59,7 +59,8 @@ def remove_nms(anchors, scores, planes, iou_thresh=0.3, score_thresh=0.9):
 
     sizes_s = (anchors_s[:, 2] - anchors_s[:, 0]) * (anchors_s[:, 3] - anchors_s[:, 1])
     # sort according to size and then score
-    sort_idxs = torch.argsort(-(sizes_s * 2 + scores_s))
+    # sort_idxs = torch.argsort(-(sizes_s * 2 + scores_s))
+    sort_idxs = torch.argsort(-(sizes_s * scores_s))
 
     # max_idx = 0
     # for i in range(anchors.shape[0]):
@@ -78,8 +79,8 @@ def remove_nms(anchors, scores, planes, iou_thresh=0.3, score_thresh=0.9):
                     if iou > iou_thresh:
                         # norm_dot = plane_to_plane_dot(planes_s[sort_idxs[i]], planes_s[sort_idxs[j]])
                         # if norm_dot > torch.tensor(10.0 * np.pi / 180.0).cos():
-                            # dist = plane_to_plane_dist(planes_s[sort_idxs[i]], planes_s[sort_idxs[j]])
-                            # if dist.abs() < 0.1:
+                        #     dist = plane_to_plane_dist(planes_s[sort_idxs[i]], planes_s[sort_idxs[j]])
+                        #     if dist.abs() < 0.1:
                         keep_mask[j] = False
 
     # nms_anchors = anchors[keep_mask]
@@ -132,7 +133,7 @@ def test_planes(scene_id, config):
     K = np.array([[554.256, 0.0, 320.0],
                   [0.0, 579.411, 240.0],
                   [0.0, 0.0, 1.0]], dtype=np.float)
-    for im_file in images_list:
+    for im_file in images_list[0:1]:
         im = cv2.imread(os.path.join(ROOT_FOLDER, scene_id, 'frames', 'color_left', im_file))
         depth = cv2.imread(os.path.join(ROOT_FOLDER, scene_id, 'frames', 'depth_left', im_file.replace('.jpg', '.png')),
                            cv2.IMREAD_ANYDEPTH) / 1000.0
@@ -150,30 +151,30 @@ def test_planes(scene_id, config):
         # Parallel(n_jobs=4, require='sharedmem')(
         #         delayed(comp_score)(idx, anchor_points[idx], scores, masks, planes) for idx in range(anchor_points.shape[0]))
 
-        # for idx in range(anchor_points.shape[0]):
-        #     comp_score(idx, anchor_points[idx], scores, masks, planes)
-        #
-        # with open('scores_' + im_file.replace('.jpg', '') + '.pt', 'wb') as f:
-        #     torch.save(scores, f)
-        # with open('planes_' + im_file.replace('.jpg', '') + '.pt', 'wb') as f:
-        #     torch.save(planes, f)
-        # with open('masks_' + im_file.replace('.jpg', '') + '.pt', 'wb') as f:
-        #     torch.save(masks, f)
+        for idx in range(anchor_points.shape[0]):
+            comp_score(idx, anchor_points[idx], scores, masks, planes)
 
-        with open('scores_' + im_file.replace('.jpg', '') + '.pt', 'rb') as f:
-            scores = torch.load(f)
-        with open('planes_' + im_file.replace('.jpg', '') + '.pt', 'rb') as f:
-            planes = torch.load(f)
-        with open('masks_' + im_file.replace('.jpg', '') + '.pt', 'rb') as f:
-            masks = torch.load(f)
+        with open('test/scores_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.pt', 'wb') as f:
+            torch.save(scores, f)
+        with open('test/planes_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.pt', 'wb') as f:
+            torch.save(planes, f)
+        with open('test/masks_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.pt', 'wb') as f:
+            torch.save(masks, f)
+
+        # with open('test/scores_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.pt', 'rb') as f:
+        #     scores = torch.load(f)
+        # with open('test/planes_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.pt', 'rb') as f:
+        #     planes = torch.load(f)
+        # with open('test/masks_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.pt', 'rb') as f:
+        #     masks = torch.load(f)
 
         # keep = torchvision.ops.nms(anchors, scores, 0.3)
-        keep = remove_nms(anchors, scores, planes, 0.3, 0.9)
+        keep = remove_nms(anchors, scores, planes, 0.5, 0.9)
 
         print('anchors kept: ', keep.shape[0])
 
         keep_ds = DisjointSet()
-        merge_thresh = 0.2
+        merge_thresh = 0.4
         for i in range(keep.shape[0]):
             for j in range(i + 1, keep.shape[0]):
                 si = keep_ds.find(i)
@@ -182,7 +183,8 @@ def test_planes(scene_id, config):
                     iou1 = calc_iou(anchors[keep[i]], anchors[keep[j]])
                     iou2 = calc_iou(anchors[keep[j]], anchors[keep[i]])
                     norm_dot = planes[keep[i]].dot(planes[keep[j]]) / (planes[keep[i]].norm() * planes[keep[j]].norm())
-                    if (iou1 > merge_thresh or iou2 > merge_thresh) and norm_dot > torch.tensor(10.0 * np.pi / 180.0).cos():
+                    # if (iou1 > merge_thresh or iou2 > merge_thresh) and norm_dot > torch.tensor(10.0 * np.pi / 180.0).cos():
+                    if (iou1 > merge_thresh or iou2 > merge_thresh):
                         keep_ds.union(i, j)
 
         segm = np.zeros([im.shape[0], im.shape[1], 3], dtype=np.uint8)
@@ -191,19 +193,25 @@ def test_planes(scene_id, config):
             pt1 = np.round(anchors[keep[idx], 0:2].numpy()).astype(np.int)
             pt2 = np.round(anchors[keep[idx], 2:4].numpy()).astype(np.int)
             id = keep_ds.find(idx)
-            print('id = ', id)
+            # print('id = ', id)
 
-            # mask = cv2.resize(masks[keep[idx]].numpy(), (pt2[0] - pt1[0], pt2[1] - pt1[1]), interpolation=cv2.INTER_NEAREST) / 255
+            mask = cv2.resize(masks[keep[idx]].numpy(), (pt2[0] - pt1[0], pt2[1] - pt1[1]), interpolation=cv2.INTER_NEAREST) / 255
             # segm_color = [(idx + 1) * 100 % 256, (idx + 1) * 100 / 256 % 256, (idx + 1) * 100 / (256 * 256)]
-            # segm[pt1[0]:pt2[0], pt1[1]:pt2[1], :] = np.tile(np.expand_dims(mask, axis=-1), [1, 1, 3]) * segm_color
+            segm_color = [(id + 1) * 100 % 256, (id + 1) * 100 / 256 % 256, (id + 1) * 100 / (256 * 256)]
+            x1 = max(pt1[0], 0)
+            x2 = min(pt2[0], segm.shape[1])
+            y1 = max(pt1[1], 0)
+            y2 = min(pt2[1], segm.shape[0])
+            # print(pt1, pt2)
+            segm[y1:y2, x1:x2, :] = np.tile(np.expand_dims(mask[y1 - pt1[1]: mask.shape[0] - (pt2[1] - y2), x1 - pt1[0]: mask.shape[1] - (pt2[0] - x2)], axis=-1), [1, 1, 3]) * segm_color
             print(tuple(color_map[id]))
             cv2.rectangle(im, (pt1[0], pt1[1]), (pt2[0], pt2[1]), (int(color_map[id,0]),int(color_map[id,1]),int(color_map[id,2])), 2)
-            if idx > 0:
-                iou = calc_iou(anchors[keep[idx - 1]], anchors[keep[idx]])
-                # print('keep[idx - 1] = ', keep[idx - 1], ', keep[idx] = ', keep[idx])
-                print('iou = ', iou, ', score1 = ', scores[keep[idx - 1]], ', score2 = ', scores[keep[idx]])
+            # if idx > 0:
+            #     iou = calc_iou(anchors[keep[idx - 1]], anchors[keep[idx]])
+            #     # print('keep[idx - 1] = ', keep[idx - 1], ', keep[idx] = ', keep[idx])
+            #     print('iou = ', iou, ', score1 = ', scores[keep[idx - 1]], ', score2 = ', scores[keep[idx]])
         cv2.imshow('planes', im)
-        # cv2.imshow('segm', segm)
+        cv2.imshow('segm', segm)
         cv2.waitKey()
 
 

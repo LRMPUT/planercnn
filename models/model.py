@@ -1879,6 +1879,51 @@ class MaskRCNN(nn.Module):
         rpn_feature_maps = [p2_out, p3_out, p4_out, p5_out, p6_out]
         mrcnn_feature_maps = [p2_out, p3_out, p4_out, p5_out]
 
+        # # TODO Checking disp features
+        # gt_depth = input[7].unsqueeze(1)
+        # camera = input[6]
+        # fx = camera[0]
+        # gt_disp = fx * torch.tensor(self.config.BASELINE, dtype=torch.float, requires_grad=False).cuda() / \
+        #                 torch.clamp(gt_depth, min=1.0e-4)
+        # for stage in range(2, 7):
+        #     h = rpn_feature_maps[stage-2].shape[2]
+        #     w = rpn_feature_maps[stage-2].shape[3]
+        #
+        #     cur_disp = torch.nn.functional.interpolate(gt_disp,
+        #                                                size=(h, w),
+        #                                                mode='bilinear').view(-1, h, w, 1)
+        #     disp_vol = torch.zeros((1,
+        #                             h,
+        #                             w,
+        #                             self.config.MAXDISP),
+        #                            dtype=torch.float, requires_grad=False).cuda()
+        #
+        #     cur_disp_low = cur_disp.floor().to(torch.long)
+        #     cur_disp_high = cur_disp.ceil().to(torch.long)
+        #     mask = cur_disp_high < self.config.MAXDISP
+        #
+        #     # urange = torch.arange(w, dtype=torch.long, requires_grad=False).cuda().reshape(1, -1).repeat(h, 1)
+        #     # vrange = torch.arange(h, dtype=torch.long, requires_grad=False).cuda().reshape(-1, 1).repeat(1, w)
+        #     # ind = torch.stack([torch.zeros_like(cur_disp_low).cuda(),
+        #     #                    cur_disp_low,
+        #     #                    vrange.expand_as(cur_disp_low),
+        #     #                    urange.expand_as(cur_disp_low)],
+        #     #                   dim=-1)
+        #     mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, requires_grad=False).cuda()
+        #     mask_vol.scatter_(-1, cur_disp_low.clamp(max=self.config.MAXDISP - 1), mask)
+        #     disp_vol[mask_vol] = 1.0 - (cur_disp[mask] - cur_disp_low[mask])
+        #
+        #     mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, requires_grad=False).cuda()
+        #     mask_vol.scatter_(-1, cur_disp_high.clamp(max=self.config.MAXDISP - 1), mask)
+        #     disp_vol[mask_vol] = 1.0 - (cur_disp_high[mask] - cur_disp[mask])
+        #
+        #     # move disp dimension (3) to 1
+        #     disp_vol = disp_vol.transpose(1, 3)
+        # 
+        #     rpn_feature_maps[stage-2] = torch.cat([rpn_feature_maps[stage-2], disp_vol], dim=1)
+        #     if stage < 6:
+        #         mrcnn_feature_maps[stage-2] = torch.cat([mrcnn_feature_maps[stage-2], disp_vol], dim=1)
+
         feature_maps = [feature_map for index, feature_map in enumerate(rpn_feature_maps[::-1])]
         if self.config.PREDICT_DEPTH:
             if self.config.PREDICT_STEREO:

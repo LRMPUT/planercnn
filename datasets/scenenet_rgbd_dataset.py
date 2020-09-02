@@ -30,7 +30,7 @@ class ScenenetRgbdDatasetSingle(Dataset):
         self.scenes = []
         self.sceneImageIndices = []
 
-        self.loadClassMap()
+        # self.loadClassMap()
 
         scene_id_to_idx = {}
         with open(os.path.join(self.dataFolder, split + '.txt')) as f:
@@ -44,8 +44,10 @@ class ScenenetRgbdDatasetSingle(Dataset):
                     scene = ScenenetRgbdScene(options,
                                               scenePath,
                                               scene_id,
-                                              self.confident_labels,
-                                              self.layout_labels,
+                                              # self.confident_labels,
+                                              # self.layout_labels,
+                                              {},
+                                              {},
                                               load_semantics=load_semantics,
                                               load_boundary=load_boundary,
                                               writer=self.writer)
@@ -77,83 +79,83 @@ class ScenenetRgbdDatasetSingle(Dataset):
 
         return
 
-    def loadClassMap(self):
-        classLabelMap = {}
-        with open(self.dataFolder + '/scannetv2-labels.combined.tsv') as info_file:
-            line_index = 0
-            for line in info_file:
-                if line_index > 0:
-                    line = line.split('\t')
-                    key = line[1].strip()
-                    
-                    if line[4].strip() != '':
-                        label = int(line[4].strip())
-                    else:
-                        label = -1
-                        pass
-                    classLabelMap[key] = label
-                    classLabelMap[key + 's'] = label
-                    classLabelMap[key + 'es'] = label                                        
-                    pass
-                line_index += 1
-                continue
-            pass
-
-        confidentClasses = {'wall': True, 
-                            'floor': True,
-                            'cabinet': True,
-                            'bed': True,
-                            'chair': False,
-                            'sofa': False,
-                            'table': True,
-                            'door': True,
-                            'window': True,
-                            'bookshelf': False,
-                            'picture': True,
-                            'counter': True,
-                            'blinds': False,
-                            'desk': True,
-                            'shelf': False,
-                            'shelves': False,
-                            'curtain': False,
-                            'dresser': True,
-                            'pillow': False,
-                            'mirror': False,
-                            'entrance': True,
-                            'floor mat': True,
-                            'clothes': False,
-                            'ceiling': True,
-                            'book': False,
-                            'books': False,                      
-                            'refridgerator': True,
-                            'television': True, 
-                            'paper': False,
-                            'towel': False,
-                            'shower curtain': False,
-                            'box': True,
-                            'whiteboard': True,
-                            'person': False,
-                            'night stand': True,
-                            'toilet': False,
-                            'sink': False,
-                            'lamp': False,
-                            'bathtub': False,
-                            'bag': False,
-                            'otherprop': False,
-                            'otherstructure': False,
-                            'otherfurniture': False,
-                            'unannotated': False,
-                            '': False
-        }
-
-        self.confident_labels = {}
-        for name, confidence in confidentClasses.items():
-            if confidence and name in classLabelMap:
-                self.confident_labels[classLabelMap[name]] = True
-                pass
-            continue
-        self.layout_labels = {1: True, 2: True, 22: True, 9: True}
-        return
+    # def loadClassMap(self):
+    #     classLabelMap = {}
+    #     with open(self.dataFolder + '/scannetv2-labels.combined.tsv') as info_file:
+    #         line_index = 0
+    #         for line in info_file:
+    #             if line_index > 0:
+    #                 line = line.split('\t')
+    #                 key = line[1].strip()
+    #
+    #                 if line[4].strip() != '':
+    #                     label = int(line[4].strip())
+    #                 else:
+    #                     label = -1
+    #                     pass
+    #                 classLabelMap[key] = label
+    #                 classLabelMap[key + 's'] = label
+    #                 classLabelMap[key + 'es'] = label
+    #                 pass
+    #             line_index += 1
+    #             continue
+    #         pass
+    #
+    #     confidentClasses = {'wall': True,
+    #                         'floor': True,
+    #                         'cabinet': True,
+    #                         'bed': True,
+    #                         'chair': False,
+    #                         'sofa': False,
+    #                         'table': True,
+    #                         'door': True,
+    #                         'window': True,
+    #                         'bookshelf': False,
+    #                         'picture': True,
+    #                         'counter': True,
+    #                         'blinds': False,
+    #                         'desk': True,
+    #                         'shelf': False,
+    #                         'shelves': False,
+    #                         'curtain': False,
+    #                         'dresser': True,
+    #                         'pillow': False,
+    #                         'mirror': False,
+    #                         'entrance': True,
+    #                         'floor mat': True,
+    #                         'clothes': False,
+    #                         'ceiling': True,
+    #                         'book': False,
+    #                         'books': False,
+    #                         'refridgerator': True,
+    #                         'television': True,
+    #                         'paper': False,
+    #                         'towel': False,
+    #                         'shower curtain': False,
+    #                         'box': True,
+    #                         'whiteboard': True,
+    #                         'person': False,
+    #                         'night stand': True,
+    #                         'toilet': False,
+    #                         'sink': False,
+    #                         'lamp': False,
+    #                         'bathtub': False,
+    #                         'bag': False,
+    #                         'otherprop': False,
+    #                         'otherstructure': False,
+    #                         'otherfurniture': False,
+    #                         'unannotated': False,
+    #                         '': False
+    #     }
+    #
+    #     self.confident_labels = {}
+    #     for name, confidence in confidentClasses.items():
+    #         if confidence and name in classLabelMap:
+    #             self.confident_labels[classLabelMap[name]] = True
+    #             pass
+    #         continue
+    #     self.layout_labels = {1: True, 2: True, 22: True, 9: True}
+    #     return
     
     def __len__(self):
         return len(self.sceneImageIndices)
