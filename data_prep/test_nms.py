@@ -79,14 +79,18 @@ def remove_nms(anchors, scores, planes, iou_thresh=0.3, score_thresh=0.9):
     return keep_idxs_all
 
 
-def comp_score(idx, cur_points, scores, masks, planes):
+def comp_score(idx, cur_points):
     if idx % 1000 == 0:
         print('idx = ', idx)
+
+    mask_h = cur_points.shape[1]
+    mask_w = cur_points.shape[2]
 
     cur_points = cur_points.reshape((3, -1)).transpose()
     valid_mask = np.linalg.norm(cur_points, axis=-1) > 1e-3
     valid_points = cur_points[valid_mask]
     plane_mask = None
+    mask = None
     plane = None
     if valid_points.shape[0] > 0:
         plane_mask, plane = utils.fit_plane_ransac(valid_points.reshape(-1, 3))
@@ -94,15 +98,15 @@ def comp_score(idx, cur_points, scores, masks, planes):
     else:
         num_inliers = 0
     # print('num_inliners = ', num_inliers, ', num points = ', cur_points.shape[0])
-    cur_score = num_inliers / cur_points.shape[0]
-    # print('cur_score = ', cur_score)
-    scores[idx] = cur_score
-    if plane_mask is not None and plane is not None:
-        planes[idx] = plane
-        mask = np.zeros(masks[idx].shape, dtype=np.bool)
-        mask[valid_mask.reshape(masks[idx].shape)] = plane_mask
-        masks[idx][mask] = 255
+    score = num_inliers / cur_points.shape[0]
+    # print('score = ', score)
+
+    if plane_mask is not None:
+        mask = np.zeros((mask_h, mask_w), dtype=np.bool)
+        mask[valid_mask.reshape((mask_h, mask_w))] = plane_mask
+
         # print(masks[idx])
+    return score, mask, plane
 
 
 def test_planes(scene_id, config):
@@ -133,12 +137,12 @@ def test_planes(scene_id, config):
         planes = np.zeros([anchor_points.shape[0], 3], dtype=np.float)
         masks = np.zeros([anchor_points.shape[0], config.MASK_SHAPE[0], config.MASK_SHAPE[1]], dtype=np.uint8)
 
-        Parallel(n_jobs=4, require='sharedmem')(
-                delayed(comp_score)(idx, anchor_points[idx], scores, masks, planes) for idx in range(anchor_points.shape[0]))
+        res = Parallel(n_jobs=8)(
+                delayed(comp_score)(idx, anchor_points[idx]) for idx in range(anchor_points.shape[0]))
 
         # for idx in range(anchor_points.shape[0]):
-        #     comp_score(idx, anchor_points[idx], scores, masks, planes)
-        #
+        #     comp_score(idx, anchor_points[idx])
+
         np.save('test/scores_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.npy', scores)
         np.save('test/planes_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.npy', planes)
         np.save('test/masks_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.npy', masks)
