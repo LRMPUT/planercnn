@@ -694,7 +694,7 @@ def fit_plane_torch(points):
 
 
 def fit_plane_ransac(points):
-    num_iter = 100
+    num_iter = 10
     plane_diff_threshold = 0.01
 
     best_inliers = 0

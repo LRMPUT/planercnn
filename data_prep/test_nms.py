@@ -9,6 +9,7 @@ import os
 import torch
 import torchvision
 import nms
+import comp_score_py
 from joblib import Parallel, delayed
 from disjoint_set import DisjointSet
 
@@ -80,8 +81,8 @@ def remove_nms(anchors, scores, planes, iou_thresh=0.3, score_thresh=0.9):
 
 
 def comp_score(idx, cur_points):
-    if idx % 1000 == 0:
-        print('idx = ', idx)
+    # if idx % 1000 == 0:
+    #     print('idx = ', idx)
 
     mask_h = cur_points.shape[1]
     mask_w = cur_points.shape[2]
@@ -137,11 +138,21 @@ def test_planes(scene_id, config):
         planes = np.zeros([anchor_points.shape[0], 3], dtype=np.float)
         masks = np.zeros([anchor_points.shape[0], config.MASK_SHAPE[0], config.MASK_SHAPE[1]], dtype=np.uint8)
 
-        res = Parallel(n_jobs=8)(
-                delayed(comp_score)(idx, anchor_points[idx]) for idx in range(anchor_points.shape[0]))
+        print('computing scores')
+        # res = Parallel(n_jobs=8)(
+        #         delayed(comp_score)(idx, anchor_points[idx]) for idx in range(anchor_points.shape[0]))
+        # res = Parallel(n_jobs=8)(
+        #         delayed(comp_score)(idx, anchor_points[idx]) for idx in range(8))
+
+        # for i, a in enumerate(res):
+        #     scores[i] = a[0]
+        #     masks[i, a[1]] = 255
+        #     planes[i] = a[2]
 
         # for idx in range(anchor_points.shape[0]):
         #     comp_score(idx, anchor_points[idx])
+
+        scores, masks, planes = comp_score_py.comp_score(anchor_points, 20, 0.01)
 
         np.save('test/scores_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.npy', scores)
         np.save('test/planes_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.npy', planes)
@@ -178,7 +189,7 @@ def test_planes(scene_id, config):
             id = keep_ds.find(idx)
             # print('id = ', id)
 
-            mask = cv2.resize(masks[keep[idx]], (pt2[0] - pt1[0], pt2[1] - pt1[1]), interpolation=cv2.INTER_NEAREST) / 255
+            mask = cv2.resize(masks[keep[idx]], (pt2[0] - pt1[0], pt2[1] - pt1[1]), interpolation=cv2.INTER_NEAREST)
             # segm_color = [(idx + 1) * 100 % 256, (idx + 1) * 100 / 256 % 256, (idx + 1) * 100 / (256 * 256)]
             segm_color = [(id + 1) * 100 % 256, (id + 1) * 100 / 256 % 256, (id + 1) * 100 / (256 * 256)]
             x1 = max(pt1[0], 0)
