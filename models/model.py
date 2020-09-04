@@ -407,10 +407,9 @@ def pyramid_roi_align(inputs, pool_size, image_shape):
     image_area = Variable(torch.FloatTensor([float(image_shape[0]*image_shape[1])]), requires_grad=False)
     if boxes.is_cuda:
         image_area = image_area.cuda()
-    roi_level = 4 + log2(torch.sqrt(h*w)/(224.0/torch.sqrt(image_area)))
+    roi_level = 4 + log2(torch.sqrt(h*w)/(640.0/torch.sqrt(image_area)))
     roi_level = roi_level.round().int()
     roi_level = roi_level.clamp(2, 5)
-
 
     ## Loop through levels and apply ROI pooling to each. P2 to P5.
     pooled = []
@@ -1101,31 +1100,31 @@ class Mask(nn.Module):
 
 
 class Depth(nn.Module):
-    def __init__(self, num_output_channels=1):
+    def __init__(self, num_input_feats, num_output_channels=1):
         super(Depth, self).__init__()
         self.num_output_channels = num_output_channels        
         self.conv1 = nn.Sequential(
-            nn.Conv2d(256, 128, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(num_input_feats, 128, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
             nn.ReLU(inplace=True)
         )
         self.conv2 = nn.Sequential(
-            nn.Conv2d(256, 128, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(num_input_feats, 128, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
             nn.ReLU(inplace=True)
         )
         self.conv3 = nn.Sequential(
-            nn.Conv2d(256, 128, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(num_input_feats, 128, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
             nn.ReLU(inplace=True)
         )
         self.conv4 = nn.Sequential(
-            nn.Conv2d(256, 128, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(num_input_feats, 128, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
             nn.ReLU(inplace=True)
         )
         self.conv5 = nn.Sequential(
-            nn.Conv2d(256, 128, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(num_input_feats, 128, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
             nn.ReLU(inplace=True)
         )
@@ -1633,8 +1632,8 @@ class MaskRCNN(nn.Module):
         ## Bottom-up Layers
         ## Returns a list of the last layers of each stage, 5 in total.
         ## Don't create the thead (stage 5), so we pick the 4th item in the list.
-        # resnet = ResNet("resnet101", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
-        resnet = ResNet("resnet50", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
+        resnet = ResNet("resnet101", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
+        # resnet = ResNet("resnet50", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
         C1, C2, C3, C4, C5 = resnet.stages()
 
         ## Top-down Layers
@@ -1651,26 +1650,29 @@ class MaskRCNN(nn.Module):
             self.anchors = self.anchors.cuda()
 
         ## RPN
-        self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256)
+        self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256 + config.MAXDISP)
 
         ## Coordinate feature
         self.coordinates = nn.Conv2d(3, 64, kernel_size=1, stride=1)
         
         ## FPN Classifier
         self.debug = False
-        self.classifier = Classifier(256, config.POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES, config.NUM_PARAMETERS, debug=self.debug)
+        self.classifier = Classifier(256 + config.MAXDISP, config.POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES, config.NUM_PARAMETERS, debug=self.debug)
 
         ## FPN Mask
-        self.mask = Mask(config, 256, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
+        self.mask = Mask(config, 256 + config.MAXDISP, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
 
         if self.config.PREDICT_DEPTH:
             if self.config.PREDICT_STEREO:
-                self.depth = DepthStereo(self.config.MAXDISP, self.config.IMAGE_SHAPE[0], self.config.IMAGE_SHAPE[1], 256)
+                self.depth = DepthStereo(self.config.MAXDISP,
+                                         self.config.IMAGE_SHAPE[0],
+                                         self.config.IMAGE_SHAPE[1],
+                                         256 + config.MAXDISP)
             else:
                 if self.config.PREDICT_BOUNDARY:
-                    self.depth = Depth(num_output_channels=3)
+                    self.depth = Depth(256 + config.MAXDISP, num_output_channels=3)
                 else:
-                    self.depth = Depth(num_output_channels=1)
+                    self.depth = Depth(256 + config.MAXDISP, num_output_channels=1)
                     pass
                 pass
 
@@ -1781,13 +1783,21 @@ class MaskRCNN(nn.Module):
             except:
                 print('load only base model')
                 try:
-                    state_dict = {k: v for k, v in state_dict.items() if 'classifier.linear_class' not in k and 'classifier.linear_bbox' not in k and 'mask.conv5' not in k}
+                    state_dict = {k: v for k, v in state_dict.items() if 'classifier.linear_class' not in k
+                                  and 'classifier.linear_bbox' not in k
+                                  and 'mask.conv5' not in k}
                     state = self.state_dict()
                     state.update(state_dict)
                     self.load_state_dict(state)
                 except:
                     print('change input dimension')
-                    state_dict = {k: v for k, v in state_dict.items() if 'classifier.linear_class' not in k and 'classifier.linear_bbox' not in k and 'mask.conv5' not in k and 'fpn.C1.0' not in k and 'classifier.conv1' not in k}
+                    state_dict = {k: v for k, v in state_dict.items() if 'classifier.linear_class' not in k
+                                  and 'classifier.linear_bbox' not in k
+                                  and 'mask.conv5' not in k
+                                  and 'mask.conv1' not in k
+                                  # and 'fpn.C1.0' not in k
+                                  and 'classifier.conv1' not in k
+                                  and 'rpn.conv_shared' not in k}
                     state = self.state_dict()
                     state.update(state_dict)
                     self.load_state_dict(state)
@@ -1879,50 +1889,50 @@ class MaskRCNN(nn.Module):
         rpn_feature_maps = [p2_out, p3_out, p4_out, p5_out, p6_out]
         mrcnn_feature_maps = [p2_out, p3_out, p4_out, p5_out]
 
-        # # TODO Checking disp features
-        # gt_depth = input[7].unsqueeze(1)
-        # camera = input[6]
-        # fx = camera[0]
-        # gt_disp = fx * torch.tensor(self.config.BASELINE, dtype=torch.float, requires_grad=False).cuda() / \
-        #                 torch.clamp(gt_depth, min=1.0e-4)
-        # for stage in range(2, 7):
-        #     h = rpn_feature_maps[stage-2].shape[2]
-        #     w = rpn_feature_maps[stage-2].shape[3]
-        #
-        #     cur_disp = torch.nn.functional.interpolate(gt_disp,
-        #                                                size=(h, w),
-        #                                                mode='bilinear').view(-1, h, w, 1)
-        #     disp_vol = torch.zeros((1,
-        #                             h,
-        #                             w,
-        #                             self.config.MAXDISP),
-        #                            dtype=torch.float, requires_grad=False).cuda()
-        #
-        #     cur_disp_low = cur_disp.floor().to(torch.long)
-        #     cur_disp_high = cur_disp.ceil().to(torch.long)
-        #     mask = cur_disp_high < self.config.MAXDISP
-        #
-        #     # urange = torch.arange(w, dtype=torch.long, requires_grad=False).cuda().reshape(1, -1).repeat(h, 1)
-        #     # vrange = torch.arange(h, dtype=torch.long, requires_grad=False).cuda().reshape(-1, 1).repeat(1, w)
-        #     # ind = torch.stack([torch.zeros_like(cur_disp_low).cuda(),
-        #     #                    cur_disp_low,
-        #     #                    vrange.expand_as(cur_disp_low),
-        #     #                    urange.expand_as(cur_disp_low)],
-        #     #                   dim=-1)
-        #     mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, requires_grad=False).cuda()
-        #     mask_vol.scatter_(-1, cur_disp_low.clamp(max=self.config.MAXDISP - 1), mask)
-        #     disp_vol[mask_vol] = 1.0 - (cur_disp[mask] - cur_disp_low[mask])
-        #
-        #     mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, requires_grad=False).cuda()
-        #     mask_vol.scatter_(-1, cur_disp_high.clamp(max=self.config.MAXDISP - 1), mask)
-        #     disp_vol[mask_vol] = 1.0 - (cur_disp_high[mask] - cur_disp[mask])
-        #
-        #     # move disp dimension (3) to 1
-        #     disp_vol = disp_vol.transpose(1, 3)
-        # 
-        #     rpn_feature_maps[stage-2] = torch.cat([rpn_feature_maps[stage-2], disp_vol], dim=1)
-        #     if stage < 6:
-        #         mrcnn_feature_maps[stage-2] = torch.cat([mrcnn_feature_maps[stage-2], disp_vol], dim=1)
+        # TODO Checking disp features
+        gt_depth = input[7].unsqueeze(1)
+        camera = input[6]
+        fx = camera[0]
+        gt_disp = fx * torch.tensor(self.config.BASELINE, dtype=torch.float, requires_grad=False).cuda() / \
+                        torch.clamp(gt_depth, min=1.0e-4)
+        for stage in range(2, 7):
+            h = rpn_feature_maps[stage-2].shape[2]
+            w = rpn_feature_maps[stage-2].shape[3]
+
+            cur_disp = torch.nn.functional.interpolate(gt_disp,
+                                                       size=(h, w),
+                                                       mode='bilinear').view(-1, h, w, 1)
+            disp_vol = torch.zeros((1,
+                                    h,
+                                    w,
+                                    self.config.MAXDISP),
+                                   dtype=torch.float, requires_grad=False).cuda()
+
+            cur_disp_low = cur_disp.floor().to(torch.long)
+            cur_disp_high = cur_disp.ceil().to(torch.long)
+            mask = cur_disp_high < self.config.MAXDISP
+
+            # urange = torch.arange(w, dtype=torch.long, requires_grad=False).cuda().reshape(1, -1).repeat(h, 1)
+            # vrange = torch.arange(h, dtype=torch.long, requires_grad=False).cuda().reshape(-1, 1).repeat(1, w)
+            # ind = torch.stack([torch.zeros_like(cur_disp_low).cuda(),
+            #                    cur_disp_low,
+            #                    vrange.expand_as(cur_disp_low),
+            #                    urange.expand_as(cur_disp_low)],
+            #                   dim=-1)
+            mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, requires_grad=False).cuda()
+            mask_vol.scatter_(-1, cur_disp_low.clamp(max=self.config.MAXDISP - 1), mask)
+            disp_vol[mask_vol] = 1.0 - (cur_disp[mask] - cur_disp_low[mask])
+
+            mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, requires_grad=False).cuda()
+            mask_vol.scatter_(-1, cur_disp_high.clamp(max=self.config.MAXDISP - 1), mask)
+            disp_vol[mask_vol] = 1.0 - (cur_disp_high[mask] - cur_disp[mask])
+
+            # move disp dimension (3) to 1
+            disp_vol = disp_vol.transpose(1, 3)
+
+            rpn_feature_maps[stage-2] = torch.cat([rpn_feature_maps[stage-2], disp_vol], dim=1)
+            if stage < 6:
+                mrcnn_feature_maps[stage-2] = torch.cat([mrcnn_feature_maps[stage-2], disp_vol], dim=1)
 
         feature_maps = [feature_map for index, feature_map in enumerate(rpn_feature_maps[::-1])]
         if self.config.PREDICT_DEPTH:
