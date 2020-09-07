@@ -26,14 +26,17 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
         self.write_invalid_indices = write_invalid_indices
 
         self.writer = writer
+
+        # t = int(time.time() * 1000000)
+        # np.random.seed(((t & 0xff000000) >> 24) +
+        #                ((t & 0x00ff0000) >> 8) +
+        #                ((t & 0x0000ff00) << 8) +
+        #                ((t & 0x000000ff) << 24))
+        # np.random.seed(13)
+
         return
 
     def __getitem__(self, index):
-        t = int(time.time() * 1000000)
-        np.random.seed(((t & 0xff000000) >> 24) +
-                       ((t & 0x00ff0000) >> 8) +
-                       ((t & 0x0000ff00) << 8) +
-                       ((t & 0x000000ff) << 24))
         if self.random:
             index = np.random.randint(len(self.sceneImageIndices))
         else:

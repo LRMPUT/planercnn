@@ -110,58 +110,75 @@ def comp_score(idx, cur_points):
     return score, mask, plane
 
 
-def test_planes(scene_id, config):
+def process_image(scene_id, im_file, K, anchors_torch):
+    print(im_file)
+
+    # im = cv2.imread(os.path.join(ROOT_FOLDER, scene_id, 'frames', 'color_left', im_file))
+    depth = cv2.imread(os.path.join(ROOT_FOLDER, scene_id, 'frames', 'depth_left', im_file.replace('.jpg', '.png')),
+                       cv2.IMREAD_ANYDEPTH) / 1000.0
+
+    points = utils.calc_points_depth(depth, K)
+    points = np.expand_dims(np.transpose(points, axes=(2, 0, 1)), axis=0)
+    anchor_points = torchvision.ops.roi_align(torch.from_numpy(points).float(),
+                                              [anchors_torch],
+                                              (28, 28)).numpy()
+    # scores = np.zeros(anchor_points.shape[0], dtype=np.float)
+    # planes = np.zeros([anchor_points.shape[0], 3], dtype=np.float)
+    # masks = np.zeros([anchor_points.shape[0], config.MASK_SHAPE[0], config.MASK_SHAPE[1]], dtype=np.uint8)
+
+    # print('computing scores')
+    # res = Parallel(n_jobs=8)(
+    #         delayed(comp_score)(idx, anchor_points[idx]) for idx in range(anchor_points.shape[0]))
+    # res = Parallel(n_jobs=8)(
+    #         delayed(comp_score)(idx, anchor_points[idx]) for idx in range(8))
+
+    # for i, a in enumerate(res):
+    #     scores[i] = a[0]
+    #     masks[i, a[1]] = 255
+    #     planes[i] = a[2]
+
+    # for idx in range(anchor_points.shape[0]):
+    #     comp_score(idx, anchor_points[idx])
+
+    scores, masks, planes = comp_score_py.comp_score(anchor_points, 20, 0.01)
+
+    # np.save('test/scores_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.npy', scores)
+    # np.save('test/planes_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.npy', planes)
+    # np.save('test/masks_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.npy', masks)
+    # scores = np.load('test/scores_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.npy')
+    # planes = np.load('test/planes_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.npy')
+    # masks = np.load('test/masks_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.npy')
+
+    np.savez_compressed(os.path.join(ROOT_FOLDER, scene_id, 'annotation', 'scores', im_file.replace('.jpg', '')),
+                        scores=scores,
+                        planes=planes,
+                        masks=masks)
+
+
+def comp_anchor_scores(scene_id, config, anchors):
     images_list = sorted(os.listdir(os.path.join(ROOT_FOLDER, scene_id, 'frames', 'color_left')))
 
-    anchors = utils.generate_pyramid_anchors(config.RPN_ANCHOR_SCALES,
-                                             config.RPN_ANCHOR_RATIOS,
-                                             config.BACKBONE_SHAPES,
-                                             config.BACKBONE_STRIDES,
-                                             config.RPN_ANCHOR_STRIDE)
+    if not os.path.isdir(os.path.join(ROOT_FOLDER, scene_id, 'annotation', 'scores')):
+        os.mkdir(os.path.join(ROOT_FOLDER, scene_id, 'annotation', 'scores'))
 
     K = np.array([[554.256, 0.0, 320.0],
                   [0.0, 579.411, 240.0],
                   [0.0, 0.0, 1.0]], dtype=np.float)
-    for im_file in images_list[0:1]:
+    anchors_torch = torch.from_numpy(anchors).float()
+
+    # Parallel(n_jobs=4)(
+    #     delayed(process_image)(scene_id, im_file, K, anchors_torch) for im_file in images_list[0:8])
+
+    for im_file in images_list:
         print(im_file)
 
         im = cv2.imread(os.path.join(ROOT_FOLDER, scene_id, 'frames', 'color_left', im_file))
-        depth = cv2.imread(os.path.join(ROOT_FOLDER, scene_id, 'frames', 'depth_left', im_file.replace('.jpg', '.png')),
-                           cv2.IMREAD_ANYDEPTH) / 1000.0
 
-        points = utils.calc_points_depth(depth, K)
-        points = np.expand_dims(np.transpose(points, axes=(2, 0, 1)), axis=0)
-        anchor_points = torchvision.ops.roi_align(torch.from_numpy(points).float(),
-                                                  [torch.from_numpy(anchors).float()],
-                                                  (config.MASK_SHAPE[0], config.MASK_SHAPE[1])).numpy()
-        scores = np.zeros(anchor_points.shape[0], dtype=np.float)
-        planes = np.zeros([anchor_points.shape[0], 3], dtype=np.float)
-        masks = np.zeros([anchor_points.shape[0], config.MASK_SHAPE[0], config.MASK_SHAPE[1]], dtype=np.uint8)
+        res = np.load(os.path.join(ROOT_FOLDER, scene_id, 'annotation', 'scores', im_file.replace('.jpg', '.npz')))
+        scores = res['scores']
+        planes = res['planes']
+        masks = res['masks']
 
-        print('computing scores')
-        # res = Parallel(n_jobs=8)(
-        #         delayed(comp_score)(idx, anchor_points[idx]) for idx in range(anchor_points.shape[0]))
-        # res = Parallel(n_jobs=8)(
-        #         delayed(comp_score)(idx, anchor_points[idx]) for idx in range(8))
-
-        # for i, a in enumerate(res):
-        #     scores[i] = a[0]
-        #     masks[i, a[1]] = 255
-        #     planes[i] = a[2]
-
-        # for idx in range(anchor_points.shape[0]):
-        #     comp_score(idx, anchor_points[idx])
-
-        scores, masks, planes = comp_score_py.comp_score(anchor_points, 20, 0.01)
-
-        np.save('test/scores_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.npy', scores)
-        np.save('test/planes_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.npy', planes)
-        np.save('test/masks_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.npy', masks)
-        # scores = np.load('test/scores_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.npy')
-        # planes = np.load('test/planes_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.npy')
-        # masks = np.load('test/masks_' + scene_id + ' ' + im_file.replace('.jpg', '') + '.npy')
-
-        # keep = torchvision.ops.nms(anchors, scores, 0.3)
         keep = remove_nms(anchors, scores, planes, 0.5, 0.9)
 
         print('anchors kept: ', keep.shape[0])
@@ -230,15 +247,22 @@ def main():
 
     scene_ids = os.listdir(ROOT_FOLDER)
     scene_ids = sorted(scene_ids)
+    scene_ids = ['scene0400_00']
     print(scene_ids)
 
     np.random.seed(13)
 
     config = PlaneConfig(args)
 
+    anchors = utils.generate_pyramid_anchors(config.RPN_ANCHOR_SCALES,
+                                             config.RPN_ANCHOR_RATIOS,
+                                             config.BACKBONE_SHAPES,
+                                             config.BACKBONE_STRIDES,
+                                             config.RPN_ANCHOR_STRIDE)
+
     for index, scene_id in enumerate(scene_ids):
         print(index, scene_id)
-        test_planes(scene_id, config)
+        comp_anchor_scores(scene_id, config, anchors)
 
 
 if __name__=='__main__':

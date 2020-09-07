@@ -163,7 +163,7 @@ def train(options):
                          input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
                          input_pair[0]['camera'],
                          input_pair[1]['image']],
-                        mode='training_detection', use_nms=2, use_refinement='refinement' in options.suffix,
+                        mode='training_detection', use_nms=2, use_refinement='refine' in options.suffix,
                         return_feature_map=True, writer=writer if sampleIndex % 100 == 0 else None)
             else:
                 [rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
@@ -173,7 +173,7 @@ def train(options):
                         [input_pair[0]['image'], input_pair[0]['image_meta'], input_pair[0]['class_ids'],
                          input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
                          input_pair[0]['camera'], input_pair[0]['depth']],
-                        mode='training_detection', use_nms=2, use_refinement='refinement' in options.suffix,
+                        mode='training_detection', use_nms=2, use_refinement='refine' in options.suffix,
                         return_feature_map=True)
 
             [rpn_class_loss, rpn_bbox_loss, mrcnn_class_loss, mrcnn_bbox_loss, mrcnn_mask_loss,

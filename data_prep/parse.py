@@ -1372,7 +1372,7 @@ def select_splits(scene_ids):
         with open(os.path.join(ROOT_FOLDER, scene_id, 'invalid_frames.txt'), 'r') as inv_file:
             invalid_frames.append(inv_file.read().splitlines())
 
-    num_train = 2000
+    num_train = 000
     num_test = 2000
 
     idx = 0
