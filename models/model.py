@@ -19,7 +19,7 @@ import torch.optim as optim
 import torch.utils.data
 from torch.autograd import Variable
 import torchvision
-# import pytorch_lightning as pl
+import pytorch_lightning as pl
 
 import utils
 import cv2
@@ -1725,6 +1725,7 @@ class MaskRCNN(nn.Module):
             trainable = bool(re.fullmatch(layer_regex, layer_name))
             if not trainable:
                 param[1].requires_grad = False
+
     def set_log_dir(self, model_path=None):
         """Sets the model log directory and epoch counter.
 
@@ -1893,7 +1894,7 @@ class MaskRCNN(nn.Module):
             ## Set batchnorm always in eval mode during training
             def set_bn_eval(m):
                 classname = m.__class__.__name__
-                if classname.find('BatchNorm2d') != -1:
+                if classname.find('BatchNorm') != -1:
                     m.eval()
 
             self.apply(set_bn_eval)
@@ -2273,134 +2274,222 @@ class MaskRCNN(nn.Module):
             return info
 
 
-# class AnchorScores(pl.LightningModule):
-#     def __init__(self, config):
-#
-#         super().__init__()
-#         self.config = config
-#         self.build(config=config)
-#         self.initialize_weights()
-#
-#     def build(self, config):
-#         """Build Mask R-CNN architecture.
-#         """
-#
-#         ## Image size must be dividable by 2 multiple times
-#         h, w = config.IMAGE_SHAPE[:2]
-#         if h / 2 ** 6 != int(h / 2 ** 6) or w / 2 ** 6 != int(w / 2 ** 6):
-#             raise Exception("Image size must be dividable by 2 at least 6 times "
-#                             "to avoid fractions when downscaling and upscaling."
-#                             "For example, use 256, 320, 384, 448, 512, ... etc. ")
-#
-#         ## Build the shared convolutional layers.
-#         ## Bottom-up Layers
-#         ## Returns a list of the last layers of each stage, 5 in total.
-#         ## Don't create the thead (stage 5), so we pick the 4th item in the list.
-#         resnet = ResNet("resnet101", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
-#         # resnet = ResNet("resnet50", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
-#         C1, C2, C3, C4, C5 = resnet.stages()
-#
-#         ## Top-down Layers
-#         ## TODO: add assert to varify feature map sizes match what's in config
-#         self.fpn = FPN(C1, C2, C3, C4, C5, out_channels=256, bilinear_upsampling=self.config.BILINEAR_UPSAMPLING)
-#
-#         ## Generate Anchors
-#         self.anchors = Variable(torch.from_numpy(utils.generate_pyramid_anchors(config.RPN_ANCHOR_SCALES,
-#                                                                                 config.RPN_ANCHOR_RATIOS,
-#                                                                                 config.BACKBONE_SHAPES,
-#                                                                                 config.BACKBONE_STRIDES,
-#                                                                                 config.RPN_ANCHOR_STRIDE)).float(),
-#                                 requires_grad=False)
-#         ## RPN
-#         self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256)
-#
-#         ## Fix batch norm layers
-#         def set_bn_fix(m):
-#             classname = m.__class__.__name__
-#             if classname.find('BatchNorm') != -1:
-#                 for p in m.parameters(): p.requires_grad = False
-#
-#         self.apply(set_bn_fix)
-#
-#     def initialize_weights(self):
-#         """Initialize model weights.
-#         """
-#
-#         for m in self.modules():
-#             if isinstance(m, nn.Conv2d):
-#                 nn.init.xavier_uniform(m.weight)
-#                 if m.bias is not None:
-#                     m.bias.data.zero_()
-#             elif isinstance(m, nn.BatchNorm2d):
-#                 m.weight.data.fill_(1)
-#                 m.bias.data.zero_()
-#             elif isinstance(m, nn.Linear):
-#                 m.weight.data.normal_(0, 0.01)
-#                 m.bias.data.zero_()
-#
-#     def forward(self, input):
-#         molded_images = input[0]
-#
-#         if self.training:
-#             ## Set batchnorm always in eval mode during training
-#             def set_bn_eval(m):
-#                 classname = m.__class__.__name__
-#                 if classname.find('BatchNorm2d') != -1:
-#                     m.eval()
-#
-#             self.apply(set_bn_eval)
-#
-#         ## Feature extraction
-#         [p2_out, p3_out, p4_out, p5_out, p6_out] = self.fpn(molded_images)
-#         ## Note that P6 is used in RPN, but not in the classifier heads.
-#
-#         rpn_feature_maps = [p2_out, p3_out, p4_out, p5_out, p6_out]
-#         mrcnn_feature_maps = [p2_out, p3_out, p4_out, p5_out]
-#
-#         ## Loop through pyramid layers
-#         layer_outputs = []  ## list of lists
-#         for p in rpn_feature_maps:
-#             layer_outputs.append(self.rpn(p))
-#
-#         ## Concatenate layer outputs
-#         ## Convert from list of lists of level outputs to list of lists
-#         ## of outputs across levels.
-#         ## e.g. [[a1, b1, c1], [a2, b2, c2]] => [[a1, a2], [b1, b2], [c1, c2]]
-#         outputs = list(zip(*layer_outputs))
-#         outputs = [torch.cat(list(o), dim=1) for o in outputs]
-#         rpn_class_logits, rpn_class, rpn_bbox = outputs
-#
-#         return [rpn_class_logits, rpn_class, rpn_bbox]
-#
-#     def training_step(self, batch, batch_idx):
-#         input_pair = []
-#         detection_pair = []
-#         dicts_pair = []
-#
-#         camera = batch[30][0]
-#         for indexOffset in [0, 13]:
-#             images, image_metas, rpn_match, rpn_bbox, gt_class_ids, gt_boxes, gt_masks, gt_parameters, gt_depth, extrinsics, gt_plane, gt_segmentation, plane_indices = \
-#                 batch[indexOffset + 0], batch[indexOffset + 1].numpy(), batch[indexOffset + 2], batch[
-#                     indexOffset + 3], batch[indexOffset + 4], batch[indexOffset + 5], batch[
-#                     indexOffset + 6], batch[indexOffset + 7], batch[indexOffset + 8], batch[
-#                     indexOffset + 9], batch[indexOffset + 10], batch[indexOffset + 11], batch[
-#                     indexOffset + 12]
-#
-#             input_pair.append({'image': images,
-#                                'image_meta': image_metas,
-#                                'depth': gt_depth,
-#                                'mask': gt_masks,
-#                                'bbox': gt_boxes,
-#                                'extrinsics': extrinsics,
-#                                'segmentation': gt_segmentation,
-#                                'class_ids': gt_class_ids,
-#                                'parameters': gt_parameters,
-#                                'plane': gt_plane,
-#                                'rpn_match': rpn_match,
-#                                'rpn_bbox': rpn_bbox,
-#                                'camera': camera})
-#
-#         self([input_pair[0]['image']])
+class AnchorScores(pl.LightningModule):
+    def __init__(self, options, config):
+
+        super().__init__()
+        self.options = options
+        self.config = config
+        self.build()
+        self.initialize_weights()
+
+        print("Loading pretrained weights ", self.options.MaskRCNNPath)
+        self.load_weights(self.options.MaskRCNNPath)
+
+    def load_weights(self, filepath):
+        """Modified version of the correspoding Keras function with
+        the addition of multi-GPU support and the ability to exclude
+        some layers from loading.
+        exlude: list of layer names to excluce
+        """
+        if os.path.exists(filepath):
+            state_dict = torch.load(filepath)
+            try:
+                self.load_state_dict(state_dict, strict=False)
+            except:
+                print('load only base model')
+                try:
+                    state_dict = {k: v for k, v in state_dict.items() if 'classifier.linear_class' not in k
+                                  and 'classifier.linear_bbox' not in k
+                                  and 'mask.conv5' not in k}
+                    state = self.state_dict()
+                    state.update(state_dict)
+                    self.load_state_dict(state)
+                except:
+                    print('change input dimension')
+                    state_dict = {k: v for k, v in state_dict.items() if 'classifier.linear_class' not in k
+                                  and 'classifier.linear_bbox' not in k
+                                  and 'mask.conv5' not in k
+                                  and 'mask.conv1' not in k
+                                  # and 'fpn.C1.0' not in k
+                                  and 'classifier.conv1' not in k
+                                  # and 'rpn.conv_shared' not in k
+                                  }
+                    state = self.state_dict()
+                    state.update(state_dict)
+                    self.load_state_dict(state)
+                    pass
+                pass
+        else:
+            raise Exception("Weight file not found")
+
+    def build(self):
+        """Build Mask R-CNN architecture.
+        """
+
+        ## Image size must be dividable by 2 multiple times
+        h, w = self.config.IMAGE_SHAPE[:2]
+        if h / 2 ** 6 != int(h / 2 ** 6) or w / 2 ** 6 != int(w / 2 ** 6):
+            raise Exception("Image size must be dividable by 2 at least 6 times "
+                            "to avoid fractions when downscaling and upscaling."
+                            "For example, use 256, 320, 384, 448, 512, ... etc. ")
+
+        ## Build the shared convolutional layers.
+        ## Bottom-up Layers
+        ## Returns a list of the last layers of each stage, 5 in total.
+        ## Don't create the thead (stage 5), so we pick the 4th item in the list.
+        resnet = ResNet("resnet101", stage5=True, numInputChannels=self.config.NUM_INPUT_CHANNELS)
+        # resnet = ResNet("resnet50", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
+        C1, C2, C3, C4, C5 = resnet.stages()
+
+        ## Top-down Layers
+        ## TODO: add assert to varify feature map sizes match what's in config
+        self.fpn = FPN(C1, C2, C3, C4, C5, out_channels=256, bilinear_upsampling=self.config.BILINEAR_UPSAMPLING)
+
+        ## Generate Anchors
+        self.anchors = Variable(torch.from_numpy(utils.generate_pyramid_anchors(self.config.RPN_ANCHOR_SCALES,
+                                                                                self.config.RPN_ANCHOR_RATIOS,
+                                                                                self.config.BACKBONE_SHAPES,
+                                                                                self.config.BACKBONE_STRIDES,
+                                                                                self.config.RPN_ANCHOR_STRIDE)).float(),
+                                requires_grad=False)
+        ## RPN
+        self.rpn = RPN(len(self.config.RPN_ANCHOR_RATIOS), self.config.RPN_ANCHOR_STRIDE, 256)
+
+        ## Fix batch norm layers
+        def set_bn_fix(m):
+            classname = m.__class__.__name__
+            if classname.find('BatchNorm') != -1:
+                m.eval()
+                for p in m.parameters():
+                    p.requires_grad = False
+
+        self.apply(set_bn_fix)
+
+    def initialize_weights(self):
+        """Initialize model weights.
+        """
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.xavier_uniform(m.weight)
+                if m.bias is not None:
+                    m.bias.data.zero_()
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+            elif isinstance(m, nn.Linear):
+                m.weight.data.normal_(0, 0.01)
+                m.bias.data.zero_()
+
+    def set_trainable(self, layer_regex, model=None, indent=0, verbose=1):
+        """Sets model layers as trainable if their names match
+        the given regular expression.
+        """
+
+        for name, param in self.named_parameters():
+            trainable = bool(re.fullmatch(layer_regex, name))
+            if not trainable:
+                param.requires_grad = False
+
+    def forward(self, input):
+        molded_images = input[0]
+
+        if self.training:
+            ## Set batchnorm always in eval mode during training
+            def set_bn_eval(m):
+                classname = m.__class__.__name__
+                if classname.find('BatchNorm') != -1:
+                    m.eval()
+
+            self.apply(set_bn_eval)
+
+        ## Feature extraction
+        [p2_out, p3_out, p4_out, p5_out, p6_out] = self.fpn(molded_images)
+        ## Note that P6 is used in RPN, but not in the classifier heads.
+
+        rpn_feature_maps = [p2_out, p3_out, p4_out, p5_out, p6_out]
+        mrcnn_feature_maps = [p2_out, p3_out, p4_out, p5_out]
+
+        ## Loop through pyramid layers
+        layer_outputs = []  ## list of lists
+        for p in rpn_feature_maps:
+            layer_outputs.append(self.rpn(p))
+
+        ## Concatenate layer outputs
+        ## Convert from list of lists of level outputs to list of lists
+        ## of outputs across levels.
+        ## e.g. [[a1, b1, c1], [a2, b2, c2]] => [[a1, a2], [b1, b2], [c1, c2]]
+        outputs = list(zip(*layer_outputs))
+        outputs = [torch.cat(list(o), dim=1) for o in outputs]
+        rpn_class_logits, rpn_class, rpn_bbox = outputs
+
+        return [rpn_class_logits, rpn_class, rpn_bbox]
+
+    def configure_optimizers(self):
+        trainable_params = []
+        if self.options.trainingMode != '':
+            ## Specify which layers to train, default is "all"
+            layer_regex = {
+                ## all layers but the backbone
+                "heads": r"(fpn.P5\_.*)|(fpn.P4\_.*)|(fpn.P3\_.*)|(fpn.P2\_.*)|(rpn.*)|(classifier.*)|(mask.*)",
+                ## From a specific Resnet stage and up
+                "3+": r"(fpn.C3.*)|(fpn.C4.*)|(fpn.C5.*)|(fpn.P5\_.*)|(fpn.P4\_.*)|(fpn.P3\_.*)|(fpn.P2\_.*)|(rpn.*)|(classifier.*)|(mask.*)",
+                "4+": r"(fpn.C4.*)|(fpn.C5.*)|(fpn.P5\_.*)|(fpn.P4\_.*)|(fpn.P3\_.*)|(fpn.P2\_.*)|(rpn.*)|(classifier.*)|(mask.*)",
+                "5+": r"(fpn.C5.*)|(fpn.P5\_.*)|(fpn.P4\_.*)|(fpn.P3\_.*)|(fpn.P2\_.*)|(rpn.*)|(classifier.*)|(mask.*)",
+                ## All layers
+                "all": ".*",
+                "classifier": "(classifier.*)|(mask.*)|(depth.*)",
+            }
+            assert (self.options.trainingMode in layer_regex.keys())
+            layers = layer_regex[self.options.trainingMode]
+            self.set_trainable(layers)
+            trainable_params = [(name, param) for name, param in self.named_parameters() if bool(re.fullmatch(layers, name))]
+        else:
+            trainable_params = self.named_parameters()
+
+        trainables_wo_bn = [param for name, param in trainable_params if not 'bn' in name]
+        trainables_only_bn = [param for name, param in trainable_params if 'bn' in name]
+
+        optimizer = optim.SGD([
+            {'params': trainables_wo_bn, 'weight_decay': 0.0001},
+            {'params': trainables_only_bn}], lr=self.options.LR, momentum=0.9)
+
+        return optimizer
+
+    def training_step(self, batch, batch_idx):
+        input_pair = []
+        detection_pair = []
+        dicts_pair = []
+
+        camera = batch[30][0]
+        for indexOffset in [0, 13]:
+            images, image_metas, rpn_match, rpn_bbox, gt_class_ids, gt_boxes, gt_masks, gt_parameters, gt_depth, extrinsics, gt_plane, gt_segmentation, plane_indices = \
+                batch[indexOffset + 0], batch[indexOffset + 1], batch[indexOffset + 2], batch[
+                    indexOffset + 3], batch[indexOffset + 4], batch[indexOffset + 5], batch[
+                    indexOffset + 6], batch[indexOffset + 7], batch[indexOffset + 8], batch[
+                    indexOffset + 9], batch[indexOffset + 10], batch[indexOffset + 11], batch[
+                    indexOffset + 12]
+
+            input_pair.append({'image': images,
+                               'image_meta': image_metas,
+                               'depth': gt_depth,
+                               'mask': gt_masks,
+                               'bbox': gt_boxes,
+                               'extrinsics': extrinsics,
+                               'segmentation': gt_segmentation,
+                               'class_ids': gt_class_ids,
+                               'parameters': gt_parameters,
+                               'plane': gt_plane,
+                               'rpn_match': rpn_match,
+                               'rpn_bbox': rpn_bbox,
+                               'camera': camera})
+
+        [rpn_class_logits, rpn_class, rpn_bbox] = self([input_pair[0]['image']])
+
+        rpn_class_loss = compute_rpn_class_loss(rpn_match, rpn_class_logits)
+
+        return {'loss': rpn_class_loss, 'log': {'training_loss': rpn_class_loss}}
 
 
 ############################################################

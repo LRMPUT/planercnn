@@ -140,7 +140,7 @@ class PlaneRCNNDetector():
         XYZ_pred, detection_mask, plane_XYZ = calcXYZModule(self.config, camera, detections, detection_masks, depth_np_pred, return_individual=True)
         detection_mask = detection_mask.unsqueeze(0)
 
-        input_pair.append({'image': images, 'depth': gt_depth, 'mask': gt_masks, 'bbox': gt_boxes, 'extrinsics': extrinsics, 'segmentation': gt_segmentation, 'camera': camera})
+        # input_pair.append({'image': images, 'depth': gt_depth, 'mask': gt_masks, 'bbox': gt_boxes, 'extrinsics': extrinsics, 'segmentation': gt_segmentation, 'camera': camera})
 
         if 'nyu_dorn_only' in self.options.dataset:
             XYZ_pred[1:2] = sample[27].cuda()
