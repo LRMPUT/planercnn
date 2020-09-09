@@ -172,6 +172,8 @@ def comp_anchor_scores(scene_id, config, anchors):
     for im_file in images_list:
         print(im_file)
 
+        process_image(scene_id, im_file, K, anchors_torch)
+
         im = cv2.imread(os.path.join(ROOT_FOLDER, scene_id, 'frames', 'color_left', im_file))
 
         res = np.load(os.path.join(ROOT_FOLDER, scene_id, 'annotation', 'scores', im_file.replace('.jpg', '.npz')))

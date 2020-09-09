@@ -53,7 +53,7 @@ def train(options):
 
     print('the number of images', len(dataset))
 
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
     # dataloader_test = DataLoader(dataset_test, batch_size=1, shuffle=True)
 
     model = MaskRCNN(config)
@@ -116,7 +116,7 @@ def train(options):
         optimizer.load_state_dict(torch.load(options.checkpoint_dir + '/optim.pth'))        
         pass
 
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.1)
+    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.1)
     for epoch in range(options.numEpochs):
         epoch_losses = []
         data_iterator = tqdm(dataloader, total=len(dataset) + 1, disable=True)
@@ -482,7 +482,7 @@ def train(options):
                 torch.save(optimizer.state_dict(), options.checkpoint_dir + '/optim.pth')
                 pass
             continue
-        scheduler.step()
+        # scheduler.step()
         continue
     return
 

@@ -756,11 +756,20 @@ def cleanSegmentation(image, planes, plane_info, segmentation, depth, camera, pl
     newSegmentation = np.full(segmentation.shape, fill_value=-1)
     validMask = np.logical_and(np.linalg.norm(image, axis=-1) > brightThreshold, depth > 1e-4)
     depthDiffMask = np.logical_or(np.abs(planeDepths - depth) < depthDiffThreshold, depth < 1e-4)
+    # depthDiffMask = np.logical_or(np.abs(planeDepths - depth) < 1.0, depth < 1e-4)
 
     for segmentIndex in np.unique(segmentation):
         if segmentIndex < 0:
             continue
         segmentMask = segmentation == segmentIndex
+
+        # print('before')
+        # mask_image = np.tile(np.expand_dims(segmentMask.astype(np.uint8), axis=-1), [1, 1, 3]) * np.array(
+        #         [0, 0, 255], dtype=np.uint8)
+        # mask_image[mask_image == 0] = image[mask_image == 0]
+        #
+        # cv2.imshow('mask', mask_image)
+        # cv2.waitKey()
 
         try:
             plane_info[segmentIndex][0][1]
@@ -778,6 +787,15 @@ def cleanSegmentation(image, planes, plane_info, segmentation, depth, camera, pl
             continue
         oriArea = segmentMask.sum()
         segmentMask = np.logical_and(segmentMask, depthDiffMask[segmentIndex])
+
+        # print('after')
+        # mask_image = np.tile(np.expand_dims(segmentMask.astype(np.uint8), axis=-1), [1, 1, 3]) * np.array(
+        #         [0, 0, 255], dtype=np.uint8)
+        # mask_image[mask_image == 0] = image[mask_image == 0]
+        #
+        # cv2.imshow('mask', mask_image)
+        # cv2.waitKey()
+
         newArea = np.logical_and(segmentMask, validMask).sum()
         if newArea < oriArea * validAreaThreshold:
             continue
@@ -1409,12 +1427,15 @@ def normalize(values):
 
 
 def roi_align(input, boxes, output_size):
-    y1, x1, y2, x2 = boxes.chunk(4, dim=1)
     h = input.shape[2]
     w = input.shape[3]
-    # convert to unnormalized coordinates in [x1, y1, x2, y2] format
-    boxes_pt = torch.cat([x1 * w, y1 * h, x2 * w, y2 * h], dim=1)
-    return torchvision.ops.roi_align(input, [boxes_pt], output_size)
+    boxes_pt = []
+    for box in boxes:
+        y1, x1, y2, x2 = box.chunk(4, dim=1)
+        # convert to unnormalized coordinates in [x1, y1, x2, y2] format
+        box_pt = torch.cat([x1 * w, y1 * h, x2 * w, y2 * h], dim=1)
+        boxes_pt.append(box_pt)
+    return torchvision.ops.roi_align(input, boxes_pt, output_size)
 
 
 # class ColorPalette:

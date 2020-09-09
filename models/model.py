@@ -19,10 +19,9 @@ import torch.optim as optim
 import torch.utils.data
 from torch.autograd import Variable
 import torchvision
+# import pytorch_lightning as pl
 
 import utils
-# from nms.nms_wrapper import nms
-# from roialign.roi_align.crop_and_resize import CropAndResizeFunction
 import cv2
 from models.modules import *
 from utils import *
@@ -442,7 +441,7 @@ def pyramid_roi_align(inputs, pool_size, image_shape):
             ind = ind.cuda()
         feature_maps[i] = feature_maps[i].unsqueeze(0)  #CropAndResizeFunction needs batch dimension
         # pooled_features = CropAndResizeFunction(pool_size, pool_size, 0)(feature_maps[i], level_boxes, ind)
-        pooled_features = roi_align(feature_maps[i], level_boxes, (pool_size, pool_size))
+        pooled_features = roi_align(feature_maps[i], [level_boxes], (pool_size, pool_size))
         pooled.append(pooled_features)
 
     ## Pack pooled features into one tensor
@@ -643,15 +642,25 @@ def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_param
 
         if config.NUM_PARAMETER_CHANNELS > 0:
             # masks = Variable(CropAndResizeFunction(config.MASK_SHAPE[0], config.MASK_SHAPE[1], 0)(roi_masks[:, :, :, 0].contiguous().unsqueeze(1), boxes, box_ids).data, requires_grad=False).squeeze(1)
-            masks = Variable(roi_align(roi_masks[:, :, :, 0].contiguous().unsqueeze(1), boxes, (config.MASK_SHAPE[0], config.MASK_SHAPE[1])).data, requires_grad=False).squeeze(1)
+            masks = Variable(roi_align(roi_masks[:, :, :, 0].contiguous().unsqueeze(1),
+                                       boxes.chunk(boxes.shape[0], dim=0),
+                                       (config.MASK_SHAPE[0], config.MASK_SHAPE[1])).data,
+                             requires_grad=False).squeeze(1)
             masks = torch.round(masks)
             # parameters = Variable(CropAndResizeFunction(config.MASK_SHAPE[0], config.MASK_SHAPE[1], 0)(roi_masks[:, :, :, 1].contiguous().unsqueeze(1), boxes, box_ids).data, requires_grad=False).squeeze(1)
-            parameters = Variable(roi_align(roi_masks[:, :, :, 1].contiguous().unsqueeze(1), boxes, (config.MASK_SHAPE[0], config.MASK_SHAPE[1])).data, requires_grad=False).squeeze(1)
+            parameters = Variable(roi_align(roi_masks[:, :, :, 1].contiguous().unsqueeze(1),
+                                       boxes.chunk(boxes.shape[0], dim=0),
+                                       (config.MASK_SHAPE[0], config.MASK_SHAPE[1])).data,
+                             requires_grad=False).squeeze(1)
             masks = torch.stack([masks, parameters], dim=-1)
         else:
             # masks = Variable(CropAndResizeFunction(config.MASK_SHAPE[0], config.MASK_SHAPE[1], 0)(roi_masks.unsqueeze(1), boxes, box_ids).data, requires_grad=False).squeeze(1)
-            masks = Variable(roi_align(roi_masks.unsqueeze(1), boxes, (config.MASK_SHAPE[0], config.MASK_SHAPE[1])).data, requires_grad=False).squeeze(1)
+            masks = Variable(roi_align(roi_masks.unsqueeze(1),
+                                       boxes.chunk(boxes.shape[0], dim=0),
+                                       (config.MASK_SHAPE[0], config.MASK_SHAPE[1])).data,
+                             requires_grad=False).squeeze(1)
             masks = torch.round(masks)
+
             pass
 
         ## Threshold mask pixels at 0.5 to have GT masks be 0 or 1 to use with
@@ -2215,7 +2224,10 @@ class MaskRCNN(nn.Module):
                     if self.config.GPU_COUNT:
                         box_ids = box_ids.cuda()
                     # roi_gt_masks = Variable(CropAndResizeFunction(self.config.FINAL_MASK_SHAPE[0], self.config.FINAL_MASK_SHAPE[1], 0)(roi_gt_masks.unsqueeze(1), boxes, box_ids).data, requires_grad=False)
-                    roi_gt_masks = Variable(roi_align(roi_gt_masks.unsqueeze(1), boxes, (self.config.FINAL_MASK_SHAPE[0], self.config.FINAL_MASK_SHAPE[1])).data, requires_grad=False)
+                    roi_gt_masks = Variable(roi_align(roi_gt_masks.unsqueeze(1),
+                                                      boxes.chunk(boxes.shape[0], dim=0),
+                                                      (self.config.FINAL_MASK_SHAPE[0], self.config.FINAL_MASK_SHAPE[1])).data,
+                                            requires_grad=False)
                     roi_gt_masks = roi_gt_masks.squeeze(1)
 
                     roi_gt_masks = torch.round(roi_gt_masks)
@@ -2260,6 +2272,135 @@ class MaskRCNN(nn.Module):
 
             return info
 
+
+# class AnchorScores(pl.LightningModule):
+#     def __init__(self, config):
+#
+#         super().__init__()
+#         self.config = config
+#         self.build(config=config)
+#         self.initialize_weights()
+#
+#     def build(self, config):
+#         """Build Mask R-CNN architecture.
+#         """
+#
+#         ## Image size must be dividable by 2 multiple times
+#         h, w = config.IMAGE_SHAPE[:2]
+#         if h / 2 ** 6 != int(h / 2 ** 6) or w / 2 ** 6 != int(w / 2 ** 6):
+#             raise Exception("Image size must be dividable by 2 at least 6 times "
+#                             "to avoid fractions when downscaling and upscaling."
+#                             "For example, use 256, 320, 384, 448, 512, ... etc. ")
+#
+#         ## Build the shared convolutional layers.
+#         ## Bottom-up Layers
+#         ## Returns a list of the last layers of each stage, 5 in total.
+#         ## Don't create the thead (stage 5), so we pick the 4th item in the list.
+#         resnet = ResNet("resnet101", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
+#         # resnet = ResNet("resnet50", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
+#         C1, C2, C3, C4, C5 = resnet.stages()
+#
+#         ## Top-down Layers
+#         ## TODO: add assert to varify feature map sizes match what's in config
+#         self.fpn = FPN(C1, C2, C3, C4, C5, out_channels=256, bilinear_upsampling=self.config.BILINEAR_UPSAMPLING)
+#
+#         ## Generate Anchors
+#         self.anchors = Variable(torch.from_numpy(utils.generate_pyramid_anchors(config.RPN_ANCHOR_SCALES,
+#                                                                                 config.RPN_ANCHOR_RATIOS,
+#                                                                                 config.BACKBONE_SHAPES,
+#                                                                                 config.BACKBONE_STRIDES,
+#                                                                                 config.RPN_ANCHOR_STRIDE)).float(),
+#                                 requires_grad=False)
+#         ## RPN
+#         self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256)
+#
+#         ## Fix batch norm layers
+#         def set_bn_fix(m):
+#             classname = m.__class__.__name__
+#             if classname.find('BatchNorm') != -1:
+#                 for p in m.parameters(): p.requires_grad = False
+#
+#         self.apply(set_bn_fix)
+#
+#     def initialize_weights(self):
+#         """Initialize model weights.
+#         """
+#
+#         for m in self.modules():
+#             if isinstance(m, nn.Conv2d):
+#                 nn.init.xavier_uniform(m.weight)
+#                 if m.bias is not None:
+#                     m.bias.data.zero_()
+#             elif isinstance(m, nn.BatchNorm2d):
+#                 m.weight.data.fill_(1)
+#                 m.bias.data.zero_()
+#             elif isinstance(m, nn.Linear):
+#                 m.weight.data.normal_(0, 0.01)
+#                 m.bias.data.zero_()
+#
+#     def forward(self, input):
+#         molded_images = input[0]
+#
+#         if self.training:
+#             ## Set batchnorm always in eval mode during training
+#             def set_bn_eval(m):
+#                 classname = m.__class__.__name__
+#                 if classname.find('BatchNorm2d') != -1:
+#                     m.eval()
+#
+#             self.apply(set_bn_eval)
+#
+#         ## Feature extraction
+#         [p2_out, p3_out, p4_out, p5_out, p6_out] = self.fpn(molded_images)
+#         ## Note that P6 is used in RPN, but not in the classifier heads.
+#
+#         rpn_feature_maps = [p2_out, p3_out, p4_out, p5_out, p6_out]
+#         mrcnn_feature_maps = [p2_out, p3_out, p4_out, p5_out]
+#
+#         ## Loop through pyramid layers
+#         layer_outputs = []  ## list of lists
+#         for p in rpn_feature_maps:
+#             layer_outputs.append(self.rpn(p))
+#
+#         ## Concatenate layer outputs
+#         ## Convert from list of lists of level outputs to list of lists
+#         ## of outputs across levels.
+#         ## e.g. [[a1, b1, c1], [a2, b2, c2]] => [[a1, a2], [b1, b2], [c1, c2]]
+#         outputs = list(zip(*layer_outputs))
+#         outputs = [torch.cat(list(o), dim=1) for o in outputs]
+#         rpn_class_logits, rpn_class, rpn_bbox = outputs
+#
+#         return [rpn_class_logits, rpn_class, rpn_bbox]
+#
+#     def training_step(self, batch, batch_idx):
+#         input_pair = []
+#         detection_pair = []
+#         dicts_pair = []
+#
+#         camera = batch[30][0]
+#         for indexOffset in [0, 13]:
+#             images, image_metas, rpn_match, rpn_bbox, gt_class_ids, gt_boxes, gt_masks, gt_parameters, gt_depth, extrinsics, gt_plane, gt_segmentation, plane_indices = \
+#                 batch[indexOffset + 0], batch[indexOffset + 1].numpy(), batch[indexOffset + 2], batch[
+#                     indexOffset + 3], batch[indexOffset + 4], batch[indexOffset + 5], batch[
+#                     indexOffset + 6], batch[indexOffset + 7], batch[indexOffset + 8], batch[
+#                     indexOffset + 9], batch[indexOffset + 10], batch[indexOffset + 11], batch[
+#                     indexOffset + 12]
+#
+#             input_pair.append({'image': images,
+#                                'image_meta': image_metas,
+#                                'depth': gt_depth,
+#                                'mask': gt_masks,
+#                                'bbox': gt_boxes,
+#                                'extrinsics': extrinsics,
+#                                'segmentation': gt_segmentation,
+#                                'class_ids': gt_class_ids,
+#                                'parameters': gt_parameters,
+#                                'plane': gt_plane,
+#                                'rpn_match': rpn_match,
+#                                'rpn_bbox': rpn_bbox,
+#                                'camera': camera})
+#
+#         self([input_pair[0]['image']])
 
 
 ############################################################

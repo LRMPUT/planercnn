@@ -175,9 +175,32 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
             mask = np.stack(instance_masks, axis=2)
             class_ids = np.array(class_ids, dtype=np.int32)
 
-                        
             image, image_metas, gt_class_ids, gt_boxes, gt_masks, gt_parameters = load_image_gt(self.config, index, image, depth, mask, class_ids, parameters, augment=self.split == 'train')
-            
+
+            # for b in range(len(gt_class_ids)):
+            #     box_image = image.copy()
+            #     pt1 = gt_boxes[b, 1:None:-1]
+            #     pt2 = gt_boxes[b, 3:1:-1]
+            #     x1 = max(pt1[0], 0)
+            #     x2 = min(pt2[0], image.shape[1])
+            #     y1 = max(pt1[1], 0)
+            #     y2 = min(pt2[1], image.shape[0])
+            #
+            #     cv2.rectangle(box_image, (pt1[0], pt1[1]), (pt2[0], pt2[1]), (0, 0, 255), 2)
+            #
+            #     mask_image = np.zeros_like(image)
+            #     cur_mask = cv2.resize(gt_masks[:, :, b].astype(np.uint8),
+            #                           (pt2[0] - pt1[0], pt2[1] - pt1[1]),
+            #                           interpolation=cv2.INTER_NEAREST)
+            #     mask_image[y1:y2, x1:x2, :] = np.tile(np.expand_dims(
+            #             cur_mask[y1 - pt1[1]: cur_mask.shape[0] - (pt2[1] - y2), x1 - pt1[0]: cur_mask.shape[1] - (pt2[0] - x2)],
+            #             axis=-1), [1, 1, 3]) * np.array([0, 0, 255], dtype=np.uint8)
+            #     mask_image[mask_image == 0] = image[mask_image == 0]
+            #
+            #     cv2.imshow('box', box_image)
+            #     cv2.imshow('mask', mask_image)
+            #     cv2.waitKey()
+
             ## RPN Targets
             rpn_match, rpn_bbox = build_rpn_targets(image.shape, self.anchors,
                                                     gt_class_ids, gt_boxes, self.config)

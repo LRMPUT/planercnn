@@ -175,21 +175,12 @@ class ScenenetRgbdScene():
             plane_area = plane_mask.sum()
             depth_error = (np.abs(plane_depth - depth) * plane_mask).sum() / max(plane_area, 1)
 
-            # depth_errors = np.abs(plane_depths - depth) * masks.transpose(2, 0, 1)
-            # depth_losses = np.sum(depth_errors, axis=(-2, -1)) / np.sum(masks.transpose(2, 0, 1), axis=(-2, -1))
-            # depth_losses = np.sum(depth_errors, axis=(-2, -1))
+            # for b in range(masks.shape[-1]):
+            #     mask_image = np.tile(np.expand_dims(masks[:, :, b].astype(np.uint8), axis=-1), [1, 1, 3]) * np.array([0, 0, 255], dtype=np.uint8)
+            #     mask_image[mask_image == 0] = image[mask_image == 0]
             #
-            # depth_6 = depth[masks[:, :, 6] > 0].mean()
-            #
-            # if self.writer is not None and self.scene_id == 'scene0034_00':
-            #     self.writer.add_image('image', image, dataformats='HWC')
-            #     # up to 10 m
-            #     self.writer.add_image('depth', depth / 10.0, dataformats='HW')
-            #     self.writer.add_image('plane_depth', plane_depth / 10.0, dataformats='HW')
-            #     self.writer.add_image('plane_mask', masks[:, :, 6], dataformats='HW')
-            #     self.writer.add_image('depth_error', (np.abs(plane_depth - depth) * plane_mask), dataformats='HW')
-            #     pass
-            # print('depth error', depth_error)
+            #     cv2.imshow('mask', mask_image)
+            #     cv2.waitKey()
 
             if depth_error > 0.1:
                 if self.writer is not None:
@@ -229,7 +220,7 @@ class ScenenetRgbdScene():
         if self.load_boundary:
             plane_points = []
             plane_instances = []
-            for plane_index in range(len(planes)):            
+            for plane_index in range(len(planes)):
                 ys, xs = (segmentation == plane_index).nonzero()
                 if len(ys) == 0:
                     plane_points.append(np.zeros(3))

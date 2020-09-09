@@ -128,7 +128,9 @@ class PlaneRCNNDetector():
              target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks,
              detection_gt_parameters, detection_gt_masks, rpn_rois, roi_features, roi_indices,
              depth_np_pred] = self.model.predict(
-                    [images, image_metas, gt_class_ids, gt_boxes, gt_masks, gt_parameters, camera, input_pair[0]['depth']],
+                    [input_pair[0]['image'], input_pair[0]['image_meta'], input_pair[0]['class_ids'],
+                     input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
+                     input_pair[0]['camera'], input_pair[0]['depth']],
                     mode='inference_detection', use_nms=2, use_refinement=True)
 
         if len(detections) > 0:
