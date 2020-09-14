@@ -21,18 +21,19 @@ from config import PlaneConfig
 
 def train(options):
     if not os.path.exists(options.checkpoint_dir):
-        os.system("mkdir -p %s"%options.checkpoint_dir)
+        os.system("mkdir -p %s" % options.checkpoint_dir)
         pass
     if not os.path.exists(options.test_dir):
-        os.system("mkdir -p %s"%options.test_dir)
+        os.system("mkdir -p %s" % options.test_dir)
         pass
 
     config = PlaneConfig(options)
-    dataset = ScenenetRgbdDataset(options, config, split='train', random=False)
-    train_loader = DataLoader(dataset, batch_size=1, shuffle=False)
+    dataset = ScenenetRgbdDataset(options, config, split='train', random=False, load_scores=True)
+    # dataset = ScenenetRgbdDataset(options, config, split='train', random=False)
+    train_loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=2)
 
     model = AnchorScores(options, config)
-    trainer = pl.Trainer(gpus=1, )
+    trainer = pl.Trainer(gpus=1)
     trainer.fit(model, train_loader)
 
 

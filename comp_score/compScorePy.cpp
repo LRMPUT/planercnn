@@ -12,6 +12,7 @@
 #include <random>
 #include <unordered_set>
 #include <iostream>
+#include <queue>
 
 // Eigen
 #include <Eigen/Dense>
@@ -118,6 +119,44 @@ std::vector<py::array_t<float>> comp_score(py::array_t<float> points, int numIte
 
     return {retScores, retMasks, retPlanes};
 }
+
+py::array_t<int> comp_components(py::array_t<int> segments) {
+    py::array_t<float> retComp(py::array::ShapeContainer{segments.shape(0), segments.shape(1)});
+    for(int r = 0; r < segments.shape(0); ++r){
+        for(int c = 0; c < segments.shape(1); ++c){
+            retComp.mutable_at(r, c) = -1;
+        }
+    }
+    int nextId = 1;
+    for(int r = 0; r < segments.shape(0); ++r){
+        for(int c = 0; c < segments.shape(1); ++c){
+            if(retComp.at(r, c) == -1){
+                std::queue<std::pair<int, int>> q;
+                q.push(std::make_pair(r, c));
+
+                while(!q.empty()){
+                    int curr = q.front().first;
+                    int curc = q.front().second;
+                    q.pop();
+                    retComp.mutable_at(curr, curc) = nextId;
+
+                    int nh[][2] = {{-1, 0},
+                                   {1, 0},
+                                   {0, -1},
+                                   {0, 1}};
+                    for(int ni = 0; ni < sizeof(nh)/sizeof(nh[0]); ++ni){
+                        int nhr = curr + nh[ni][0];
+                        int nhc = curc + nh[ni][1];
+                        if(nhr >= 0 && nhr < segments.shape(0) && nhc >= 0 && nhc < segments.shape(1)){
+                            
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 PYBIND11_MODULE(comp_score_py, m) {
     m.doc() = R"pbdoc(

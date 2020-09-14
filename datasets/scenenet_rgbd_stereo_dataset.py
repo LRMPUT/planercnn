@@ -18,11 +18,17 @@ from datasets.scenenet_rgbd_dataset import *
 
 
 class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
-    def __init__(self, options, config, split, random=True, image_only=False, load_semantics=False, load_boundary=False, write_invalid_indices=False, writer=None):
-        super().__init__(options, config, split, random, load_semantics=load_semantics, load_boundary=load_boundary, writer=writer)
+    def __init__(self, options, config, split, random=True, image_only=False, load_semantics=False, load_boundary=False,
+                 write_invalid_indices=False, writer=None, load_scores=False):
+        super().__init__(options, config, split, random, load_semantics=load_semantics, load_boundary=load_boundary,
+                         writer=writer, load_scores=load_scores)
+
+        cv2.setNumThreads(0)
+
         self.image_only = image_only
         self.load_semantics = load_semantics
         self.load_boundary = load_boundary
+        self.load_scores = load_scores
         self.write_invalid_indices = write_invalid_indices
 
         self.writer = writer
@@ -54,10 +60,10 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
             else:
                 index = (index + 1) % len(self.sceneImageIndices)
                 pass
-        
+
             sceneIndex, frame_num = self.sceneImageIndices[index]
             scene = self.scenes[sceneIndex]
-            
+
             # if frame_num + self.options.frameGap < len(scene.imagePaths):
             #     frame_num_2 = frame_num + self.options.frameGap
             # else:
@@ -67,10 +73,10 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
             # disabled because of the way samples were drawn
             # if (sceneIndex * 10000 + frame_num_2) in self.invalid_indices:
             #     continue
-            
+
             try:
-            # left image
-                image_1, planes_1, plane_info_1, segmentation_1, depth_1, camera_1, extrinsics_1, semantics_1 = scene[frame_num, 0]
+                # left image
+                info_1 = scene[frame_num, 0]
             except Exception as e:
                 print('Exception: ', e)
                 continue
@@ -78,25 +84,26 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
                 print('Exception for first %s %s' % (scene.scene_id, frame_num))
                 if self.write_invalid_indices:
                     print('invalid')
-                    print(str(index) + ' ' + str(sceneIndex) + ' ' + str(frame_num) + '\n', file=open(self.dataFolder + '/invalid_indices_' + self.split + '.txt', 'a'))
+                    print(str(index) + ' ' + str(sceneIndex) + ' ' + str(frame_num) + '\n',
+                          file=open(self.dataFolder + '/invalid_indices_' + self.split + '.txt', 'a'))
                     return 1
                 continue
 
             if self.write_invalid_indices:
                 return 0
-            
-            info_1 = [image_1, planes_1, plane_info_1, segmentation_1, depth_1, camera_1, extrinsics_1, semantics_1]
-            
+
+            # info_1 = [image_1, planes_1, plane_info_1, segmentation_1, depth_1, camera_1, extrinsics_1, semantics_1]
+
             try:
                 # right image
-                image_2, planes_2, plane_info_2, segmentation_2, depth_2, camera_2, extrinsics_2, semantics_2 = scene[frame_num, 1]
+                info_2 = scene[frame_num, 1]
             except Exception as e:
                 print('Exception: ', e)
             except:
                 print('Exception for second %s %s' % (scene.scene_id, frame_num))
                 continue
-            
-            info_2 = [image_2, planes_2, plane_info_2, segmentation_2, depth_2, camera_2, extrinsics_2, semantics_2]
+
+            # info_2 = [image_2, planes_2, plane_info_2, segmentation_2, depth_2, camera_2, extrinsics_2, semantics_2]
             break
         if self.image_only:
             data_pair = []
@@ -104,12 +111,12 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
                 image, planes, plane_info, segmentation, depth, camera, extrinsics, semantics = info
                 image = cv2.resize(image, (depth.shape[1], depth.shape[0]))
                 image, window, scale, padding = utils.resize_image(
-                    image,
-                    min_dim=self.config.IMAGE_MAX_DIM,
-                    max_dim=self.config.IMAGE_MAX_DIM,
-                    padding=self.config.IMAGE_PADDING)
-                
-                image = utils.mold_image(image.astype(np.float32), self.config)                
+                        image,
+                        min_dim=self.config.IMAGE_MAX_DIM,
+                        max_dim=self.config.IMAGE_MAX_DIM,
+                        padding=self.config.IMAGE_PADDING)
+
+                image = utils.mold_image(image.astype(np.float32), self.config)
                 image = torch.from_numpy(image.transpose(2, 0, 1)).float()
                 depth = np.concatenate([np.zeros((80, 640)), depth, np.zeros((80, 640))], axis=0)
                 data_pair += [image, depth.astype(np.float32), camera]
@@ -118,12 +125,16 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
         data_pair = []
         extrinsics_pair = []
         for info in [info_1, info_2]:
-            image, planes, plane_info, segmentation, depth, camera, extrinsics, semantics = info
+
+            if self.load_scores:
+                image, planes, plane_info, segmentation, depth, camera, extrinsics, semantics, scores_a, planes_a, masks_a = info
+            else:
+                image, planes, plane_info, segmentation, depth, camera, extrinsics, semantics = info
 
             image = cv2.resize(image, (depth.shape[1], depth.shape[0]))
-            
+
             instance_masks = []
-            class_ids = []        
+            class_ids = []
             parameters = []
 
             if len(planes) > 0:
@@ -134,11 +145,11 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
                     plane_offsets = np.linalg.norm(planes, axis=-1)
                     plane_normals = planes / np.expand_dims(plane_offsets, axis=-1)
                     distances_N = np.linalg.norm(np.expand_dims(plane_normals, 1) - self.config.ANCHOR_NORMALS, axis=-1)
-                    normal_anchors = distances_N.argmin(-1)                
+                    normal_anchors = distances_N.argmin(-1)
                     distances_d = np.abs(np.expand_dims(plane_offsets, -1) - self.config.ANCHOR_OFFSETS)
                     offset_anchors = distances_d.argmin(-1)
                 elif 'normal' in self.config.ANCHOR_TYPE or self.config.ANCHOR_TYPE == 'patch':
-                    plane_offsets = np.linalg.norm(planes, axis=-1)                    
+                    plane_offsets = np.linalg.norm(planes, axis=-1)
                     plane_normals = planes / np.expand_dims(plane_offsets, axis=-1)
                     distances_N = np.linalg.norm(np.expand_dims(plane_normals, 1) - self.config.ANCHOR_NORMALS, axis=-1)
                     normal_anchors = distances_N.argmin(-1)
@@ -158,7 +169,8 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
                     residual = plane - self.config.ANCHOR_PLANES[plane_anchors[planeIndex]]
                     parameters.append(np.concatenate([residual, np.array([0, plane_info[planeIndex][-1]])], axis=0))
                 elif self.config.ANCHOR_TYPE == 'Nd':
-                    class_ids.append(normal_anchors[planeIndex] * len(self.config.ANCHOR_OFFSETS) + offset_anchors[planeIndex] + 1)
+                    class_ids.append(
+                        normal_anchors[planeIndex] * len(self.config.ANCHOR_OFFSETS) + offset_anchors[planeIndex] + 1)
                     normal = plane_normals[planeIndex] - self.config.ANCHOR_NORMALS[normal_anchors[planeIndex]]
                     offset = plane_offsets[planeIndex] - self.config.ANCHOR_OFFSETS[offset_anchors[planeIndex]]
                     parameters.append(np.concatenate([normal, np.array([offset])], axis=0))
@@ -167,7 +179,7 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
                     normal = plane_normals[planeIndex] - self.config.ANCHOR_NORMALS[normal_anchors[planeIndex]]
                     parameters.append(np.concatenate([normal, np.array([plane_info[planeIndex][-1]])], axis=0))
                 else:
-                    assert(False)
+                    assert (False)
                     pass
                 continue
 
@@ -175,7 +187,10 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
             mask = np.stack(instance_masks, axis=2)
             class_ids = np.array(class_ids, dtype=np.int32)
 
-            image, image_metas, gt_class_ids, gt_boxes, gt_masks, gt_parameters = load_image_gt(self.config, index, image, depth, mask, class_ids, parameters, augment=self.split == 'train')
+            [image, image_metas, gt_class_ids, gt_boxes, gt_masks, gt_parameters] = load_image_gt(self.config, index,
+                                                                                                  image, depth, mask,
+                                                                                                  class_ids, parameters,
+                                                                                                  augment=self.split == 'train')
 
             # for b in range(len(gt_class_ids)):
             #     box_image = image.copy()
@@ -202,25 +217,30 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
             #     cv2.waitKey()
 
             ## RPN Targets
-            rpn_match, rpn_bbox = build_rpn_targets(image.shape, self.anchors,
-                                                    gt_class_ids, gt_boxes, self.config)
+            if self.load_scores:
+                rpn_match = scores_a
+                rpn_bbox = np.zeros((rpn_match.shape[0], 4), dtype=np.float)
+            else:
+                rpn_match, rpn_bbox = build_rpn_targets(image.shape, self.anchors,
+                                                        gt_class_ids, gt_boxes, self.config)
 
             ## If more instances than fits in the array, sub-sample from them.
             if gt_boxes.shape[0] > self.config.MAX_GT_INSTANCES:
                 ids = np.random.choice(
-                    np.arange(gt_boxes.shape[0]), self.config.MAX_GT_INSTANCES, replace=False)
+                        np.arange(gt_boxes.shape[0]), self.config.MAX_GT_INSTANCES, replace=False)
                 gt_class_ids = gt_class_ids[ids]
                 gt_boxes = gt_boxes[ids]
                 gt_masks = gt_masks[:, :, ids]
-                gt_parameters = gt_parameters[ids]            
+                gt_parameters = gt_parameters[ids]
                 pass
-            
+
             ## Add to batch
             rpn_match = rpn_match[:, np.newaxis]
             image = utils.mold_image(image.astype(np.float32), self.config)
 
             depth = np.concatenate([np.zeros((80, 640)), depth, np.zeros((80, 640))], axis=0)
-            segmentation = np.concatenate([np.full((80, 640), fill_value=-1, dtype=np.int32), segmentation, np.full((80, 640), fill_value=-1, dtype=np.int32)], axis=0)
+            segmentation = np.concatenate([np.full((80, 640), fill_value=-1, dtype=np.int32), segmentation,
+                                           np.full((80, 640), fill_value=-1, dtype=np.int32)], axis=0)
 
             ## Convert
             image = torch.from_numpy(image.transpose(2, 0, 1)).float()
@@ -232,13 +252,16 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
             gt_masks = torch.from_numpy(gt_masks.astype(np.float32)).transpose(1, 2).transpose(0, 1)
             plane_indices = torch.from_numpy(gt_parameters[:, -1]).long()
             gt_parameters = torch.from_numpy(gt_parameters[:, :-1]).float()
-            data_pair += [image, image_metas, rpn_match, rpn_bbox, gt_class_ids, gt_boxes, gt_masks, gt_parameters, depth.astype(np.float32), extrinsics.astype(np.float32), planes.astype(np.float32), segmentation, plane_indices]
+            data_pair += [image, image_metas, rpn_match, rpn_bbox, gt_class_ids, gt_boxes, gt_masks, gt_parameters,
+                          depth.astype(np.float32), extrinsics.astype(np.float32), planes.astype(np.float32),
+                          segmentation, plane_indices]
 
             if self.load_semantics or self.load_boundary:
-                semantics = np.concatenate([np.full((80, 640), fill_value=-1, dtype=np.int32), semantics, np.full((80, 640), fill_value=-1, dtype=np.int32)], axis=0)                
+                semantics = np.concatenate([np.full((80, 640), fill_value=-1, dtype=np.int32), semantics,
+                                            np.full((80, 640), fill_value=-1, dtype=np.int32)], axis=0)
                 data_pair[-1] = semantics
                 pass
-            
+
             extrinsics_pair.append(extrinsics)
             continue
 
@@ -258,9 +281,8 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
                 continue
             continue
         data_pair.append(info_1[1].astype(np.float32))
-        data_pair.append(info_2[1].astype(np.float32))        
+        data_pair.append(info_2[1].astype(np.float32))
         data_pair.append(correspondence)
         data_pair.append(camera.astype(np.float32))
 
         return data_pair
-

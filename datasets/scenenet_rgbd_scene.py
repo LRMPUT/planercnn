@@ -12,12 +12,18 @@ import re
 
 from utils import *
 
+
 class ScenenetRgbdScene():
     """ This class handle one scene of the scannet dataset and provide interface for dataloaders """
-    def __init__(self, options, scenePath, scene_id, confident_labels, layout_labels, load_semantics, load_boundary=False, writer=None):
+
+    def __init__(self, options, scenePath, scene_id, confident_labels, layout_labels, load_semantics,
+                 load_boundary=False, writer=None, load_scores=False):
+        cv2.setNumThreads(0)
+
         self.options = options
         self.load_semantics = load_semantics
         self.load_boundary = load_boundary
+        self.load_scores = load_scores
         self.scannetVersion = 2
         self.scene_id = scene_id
 
@@ -26,7 +32,7 @@ class ScenenetRgbdScene():
         self.writer = writer
 
         self.confident_labels, self.layout_labels = confident_labels, layout_labels
-        
+
         self.camera = np.zeros(6)
 
         with open(scenePath + '/' + scene_id + '.txt') as f:
@@ -57,18 +63,20 @@ class ScenenetRgbdScene():
         self.depthShift = 1000.0
         # self.imagePaths = [scenePath + '/frames/color/' + str(imageIndex) + '.jpg' for imageIndex in range(self.numImages - 1)]
         # self.imagePaths = sorted(glob.glob(scenePath + '/frames/color_left/*.jpg'))
-        self.frame_nums = {re.split('[\\/.]', path)[-2] for path in os.listdir(os.path.join(scenePath, 'frames', 'color_left'))}
+        self.frame_nums = {re.split('[\\/.]', path)[-2] for path in
+                           os.listdir(os.path.join(scenePath, 'frames', 'color_left'))}
 
         # self.imagePaths = [[os.path.join(scenePath, 'frames', 'color_left', frame_num + '.jpg') for frame_num in self.frame_nums],
         #                    [os.path.join(scenePath, 'frames', 'color_right', frame_num + '.jpg') for frame_num in self.frame_nums]]
-            
+
         self.camera[4] = self.depthWidth
         self.camera[5] = self.depthHeight
         self.planes = np.load(scenePath + '/annotation/planes.npy')
 
         self.plane_info = np.load(scenePath + '/annotation/plane_info.npy', allow_pickle=True)
         if len(self.plane_info) != len(self.planes):
-            print('invalid number of plane info', scenePath + '/annotation/planes.npy', scenePath + '/annotation/plane_info.npy', len(self.plane_info), len(self.planes))
+            print('invalid number of plane info', scenePath + '/annotation/planes.npy',
+                  scenePath + '/annotation/plane_info.npy', len(self.plane_info), len(self.planes))
             exit(1)
 
         self.scenePath = scenePath
@@ -76,7 +84,7 @@ class ScenenetRgbdScene():
 
     def transformPlanes(self, transformation, planes):
         planeOffsets = np.linalg.norm(planes, axis=-1, keepdims=True)
-        
+
         centers = planes
         centers = np.concatenate([centers, np.ones((planes.shape[0], 1))], axis=-1)
         newCenters = np.transpose(np.matmul(transformation, np.transpose(centers)))
@@ -95,7 +103,7 @@ class ScenenetRgbdScene():
 
     def __len__(self):
         return len(self.frame_nums)
-    
+
     def __getitem__(self, frame_num_cam_idx):
         frame_num = frame_num_cam_idx[0]
         cam_idx = frame_num_cam_idx[1]
@@ -103,10 +111,14 @@ class ScenenetRgbdScene():
         imagePath = os.path.join(self.scenePath, 'frames', 'color_' + self.cams[cam_idx], frame_num + '.jpg')
         image = cv2.imread(imagePath)
 
-        segmentationPath = imagePath.replace('frames/color_' + self.cams[cam_idx] + '/', 'annotation/segmentation_' + self.cams[cam_idx] + '/').replace('.jpg', '.png')
+        segmentationPath = imagePath.replace('frames/color_' + self.cams[cam_idx] + '/',
+                                             'annotation/segmentation_' + self.cams[cam_idx] + '/').replace('.jpg',
+                                                                                                            '.png')
         depthPath = imagePath.replace('color', 'depth').replace('.jpg', '.png')
         posePath = imagePath.replace('color', 'pose').replace('.jpg', '.txt')
         semanticsPath = imagePath.replace('color/', 'instance-filt/').replace('.jpg', '.png')
+        scoresPath = imagePath.replace('frames/color_' + self.cams[cam_idx] + '/',
+                                       'annotation/scores_' + self.cams[cam_idx] + '/').replace('.jpg', '.npz')
 
         try:
             depth = cv2.imread(depthPath, -1).astype(np.float32) / self.depthShift
@@ -128,14 +140,15 @@ class ScenenetRgbdScene():
         extrinsics[2] = -temp
 
         segmentation = cv2.imread(segmentationPath, -1).astype(np.int32)
-        
-        segmentation = (segmentation[:, :, 2] * 256 * 256 + segmentation[:, :, 1] * 256 + segmentation[:, :, 0]) // 100 - 1
+
+        segmentation = (segmentation[:, :, 2] * 256 * 256 + segmentation[:, :, 1] * 256 + segmentation[:, :,
+                                                                                          0]) // 100 - 1
 
         segments, counts = np.unique(segmentation, return_counts=True)
         segmentList = zip(segments.tolist(), counts.tolist())
         segmentList = [segment for segment in segmentList if segment[0] not in [-1, 167771]]
-        segmentList = sorted(segmentList, key=lambda x:-x[1])
-        
+        segmentList = sorted(segmentList, key=lambda x: -x[1])
+
         newPlanes = []
         newPlaneInfo = []
         newSegmentation = np.full(segmentation.shape, fill_value=-1, dtype=np.int32)
@@ -145,7 +158,7 @@ class ScenenetRgbdScene():
             if count < self.options.planeAreaThreshold:
                 continue
             if oriIndex >= len(self.planes):
-                continue            
+                continue
             if np.linalg.norm(self.planes[oriIndex]) < 1e-4:
                 continue
             newPlanes.append(self.planes[oriIndex])
@@ -156,7 +169,7 @@ class ScenenetRgbdScene():
 
         segmentation = newSegmentation
         planes_global = np.array(newPlanes)
-        plane_info = newPlaneInfo        
+        plane_info = newPlaneInfo
 
         image = cv2.resize(image, (depth.shape[1], depth.shape[0]))
 
@@ -171,7 +184,7 @@ class ScenenetRgbdScene():
             masks = (np.expand_dims(segmentation, -1) == np.arange(len(planes))).astype(np.float32)
             plane_depth = (plane_depths.transpose((1, 2, 0)) * masks).sum(2)
             plane_mask = masks.max(2)
-            plane_mask *= (depth > 1e-4).astype(np.float32)            
+            plane_mask *= (depth > 1e-4).astype(np.float32)
             plane_area = plane_mask.sum()
             depth_error = (np.abs(plane_depth - depth) * plane_mask).sum() / max(plane_area, 1)
 
@@ -202,11 +215,11 @@ class ScenenetRgbdScene():
                 planes = []
                 pass
             pass
-        
+
         if len(planes) == 0 or segmentation.max() < 0:
             exit(1)
             pass
-        
+
         info = [image, planes, plane_info, segmentation, depth, self.camera, extrinsics]
 
         if self.load_semantics or self.load_boundary:
@@ -228,7 +241,8 @@ class ScenenetRgbdScene():
                     continue
                 u, v = int(round(xs.mean())), int(round(ys.mean()))
                 depth_value = plane_depths[plane_index, v, u]
-                point = np.array([(u - self.camera[2]) / self.camera[0] * depth_value, depth_value, -(v - self.camera[3]) / self.camera[1] * depth_value])
+                point = np.array([(u - self.camera[2]) / self.camera[0] * depth_value, depth_value,
+                                  -(v - self.camera[3]) / self.camera[1] * depth_value])
                 plane_points.append(point)
                 plane_instances.append(np.bincount(semantics[ys, xs]).argmax())
                 continue
@@ -239,29 +253,31 @@ class ScenenetRgbdScene():
                     plane_instances[plane_index] = 65535
                     pass
                 continue
-            
+
             parallelThreshold = np.cos(np.deg2rad(30))
             boundary_map = np.zeros(segmentation.shape)
-            
+
             plane_boundary_masks = []
             for plane_index in range(len(planes)):
                 mask = (segmentation == plane_index).astype(np.uint8)
-                plane_boundary_masks.append(cv2.dilate(mask, np.ones((3, 3)), iterations=15) - cv2.erode(mask, np.ones((3, 3)), iterations=15) > 0.5)
+                plane_boundary_masks.append(
+                    cv2.dilate(mask, np.ones((3, 3)), iterations=15) - cv2.erode(mask, np.ones((3, 3)),
+                                                                                 iterations=15) > 0.5)
                 continue
-                        
 
             for plane_index_1 in range(len(planes)):
                 plane_1 = planes[plane_index_1]
                 offset_1 = np.linalg.norm(plane_1)
-                normal_1 = plane_1 / max(offset_1, 1e-4)                                
+                normal_1 = plane_1 / max(offset_1, 1e-4)
                 for plane_index_2 in range(len(planes)):
                     if plane_index_2 <= plane_index_1:
                         continue
-                    if plane_instances[plane_index_1] != plane_instances[plane_index_2] or plane_instances[plane_index_1] == -1:
+                    if plane_instances[plane_index_1] != plane_instances[plane_index_2] or plane_instances[
+                        plane_index_1] == -1:
                         continue
-                    plane_2 = planes[plane_index_2]                    
+                    plane_2 = planes[plane_index_2]
                     offset_2 = np.linalg.norm(plane_2)
-                    normal_2 = plane_2 / max(offset_2, 1e-4)            
+                    normal_2 = plane_2 / max(offset_2, 1e-4)
                     if np.abs(np.dot(normal_2, normal_1)) > parallelThreshold:
                         continue
                     point_1, point_2 = plane_points[plane_index_1], plane_points[plane_index_2]
@@ -271,18 +287,30 @@ class ScenenetRgbdScene():
                         concave = False
                         pass
                     boundary_mask = (plane_depths[plane_index_1] < plane_depths[plane_index_2]).astype(np.uint8)
-                    boundary_mask = cv2.dilate(boundary_mask, np.ones((3, 3)), iterations=5) - cv2.erode(boundary_mask, np.ones((3, 3)), iterations=5)
+                    boundary_mask = cv2.dilate(boundary_mask, np.ones((3, 3)), iterations=5) - cv2.erode(boundary_mask,
+                                                                                                         np.ones((
+                                                                                                                 3, 3)),
+                                                                                                         iterations=5)
                     instance_mask = semantics == plane_instances[plane_index_1]
                     boundary_mask = np.logical_and(boundary_mask > 0.5, instance_mask)
-                    boundary_mask = np.logical_and(boundary_mask, np.logical_and(plane_boundary_masks[plane_index_1], plane_boundary_masks[plane_index_2]))
+                    boundary_mask = np.logical_and(boundary_mask, np.logical_and(plane_boundary_masks[plane_index_1],
+                                                                                 plane_boundary_masks[plane_index_2]))
                     if concave:
                         boundary_map[boundary_mask] = 1
                     else:
                         boundary_map[boundary_mask] = 2
                     continue
                 continue
-            
+
             info[-1] = boundary_map
             pass
-                
+
+        if self.load_scores:
+            anchor_data = np.load(scoresPath)
+            scores_a = anchor_data['scores']
+            planes_a = anchor_data['planes']
+            masks_a = anchor_data['masks']
+
+            info.extend([scores_a, planes_a, masks_a])
+
         return info

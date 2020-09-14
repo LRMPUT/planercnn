@@ -17,7 +17,9 @@ from datasets.scenenet_rgbd_scene import ScenenetRgbdScene
 
 
 class ScenenetRgbdDatasetSingle(Dataset):
-    def __init__(self, options, config, split, random=True, loadNeighborImage=False, load_semantics=False, load_boundary=False, writer=None):
+    def __init__(self, options, config, split, random=True, loadNeighborImage=False, load_semantics=False, load_boundary=False, writer=None, load_scores=False):
+        cv2.setNumThreads(0)
+
         self.options = options
         self.config = config
         self.split = split
@@ -50,7 +52,8 @@ class ScenenetRgbdDatasetSingle(Dataset):
                                               {},
                                               load_semantics=load_semantics,
                                               load_boundary=load_boundary,
-                                              writer=self.writer)
+                                              writer=self.writer,
+                                              load_scores=load_scores)
                     self.scenes.append(scene)
                     scene_id_to_idx[scene_id] = len(self.scenes) - 1
 

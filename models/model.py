@@ -501,7 +501,7 @@ def coordinates_roi(inputs, pool_size, image_shape):
         ind = ind.cuda()
     cooridnates = cooridnates.unsqueeze(0)  ## CropAndResizeFunction needs batch dimension
     # pooled_features = CropAndResizeFunction(pool_size, pool_size, 0)(cooridnates, boxes, ind)
-    pooled_features = roi_align(cooridnates, boxes, (pool_size, pool_size))
+    pooled_features = roi_align(cooridnates, [boxes], (pool_size, pool_size))
 
     return pooled_features
 
@@ -1660,20 +1660,20 @@ class MaskRCNN(nn.Module):
             self.anchors = self.anchors.cuda()
 
         ## RPN
-        # self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256 + config.MAXDISP)
-        self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256)
+        self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256 + config.MAXDISP)
+        # self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256)
 
         ## Coordinate feature
         self.coordinates = nn.Conv2d(3, 64, kernel_size=1, stride=1)
         
         ## FPN Classifier
         self.debug = False
-        # self.classifier = Classifier(256 + config.MAXDISP, config.POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES, config.NUM_PARAMETERS, debug=self.debug)
-        self.classifier = Classifier(256, config.POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES, config.NUM_PARAMETERS, debug=self.debug)
+        self.classifier = Classifier(256 + config.MAXDISP, config.POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES, config.NUM_PARAMETERS, debug=self.debug)
+        # self.classifier = Classifier(256, config.POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES, config.NUM_PARAMETERS, debug=self.debug)
 
         ## FPN Mask
-        # self.mask = Mask(config, 256 + config.MAXDISP, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
-        self.mask = Mask(config, 256, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
+        self.mask = Mask(config, 256 + config.MAXDISP, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
+        # self.mask = Mask(config, 256, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
 
         if self.config.PREDICT_DEPTH:
             if self.config.PREDICT_STEREO:
@@ -1683,11 +1683,11 @@ class MaskRCNN(nn.Module):
                                          256)
             else:
                 if self.config.PREDICT_BOUNDARY:
-                    # self.depth = Depth(256 + config.MAXDISP, num_output_channels=3)
-                    self.depth = Depth(256, num_output_channels=3)
+                    self.depth = Depth(256 + config.MAXDISP, num_output_channels=3)
+                    # self.depth = Depth(256, num_output_channels=3)
                 else:
-                    # self.depth = Depth(256 + config.MAXDISP, num_output_channels=1)
-                    self.depth = Depth(256, num_output_channels=1)
+                    self.depth = Depth(256 + config.MAXDISP, num_output_channels=1)
+                    # self.depth = Depth(256, num_output_channels=1)
                     pass
                 pass
 
@@ -1813,7 +1813,7 @@ class MaskRCNN(nn.Module):
                                   and 'mask.conv1' not in k
                                   # and 'fpn.C1.0' not in k
                                   and 'classifier.conv1' not in k
-                                  # and 'rpn.conv_shared' not in k
+                                  and 'rpn.conv_shared' not in k
                                   }
                     state = self.state_dict()
                     state.update(state_dict)
@@ -1906,50 +1906,50 @@ class MaskRCNN(nn.Module):
         rpn_feature_maps = [p2_out, p3_out, p4_out, p5_out, p6_out]
         mrcnn_feature_maps = [p2_out, p3_out, p4_out, p5_out]
 
-        # # TODO Checking disp features
-        # gt_depth = input[7].unsqueeze(1)
-        # camera = input[6]
-        # fx = camera[0]
-        # gt_disp = fx * torch.tensor(self.config.BASELINE, dtype=torch.float, requires_grad=False).cuda() / \
-        #                 torch.clamp(gt_depth, min=1.0e-4)
-        # for stage in range(2, 7):
-        #     h = rpn_feature_maps[stage-2].shape[2]
-        #     w = rpn_feature_maps[stage-2].shape[3]
-        #
-        #     cur_disp = torch.nn.functional.interpolate(gt_disp,
-        #                                                size=(h, w),
-        #                                                mode='bilinear').view(-1, h, w, 1)
-        #     disp_vol = torch.zeros((1,
-        #                             h,
-        #                             w,
-        #                             self.config.MAXDISP),
-        #                            dtype=torch.float, requires_grad=False).cuda()
-        #
-        #     cur_disp_low = cur_disp.floor().to(torch.long)
-        #     cur_disp_high = cur_disp.ceil().to(torch.long)
-        #     mask = cur_disp_high < self.config.MAXDISP
-        #
-        #     # urange = torch.arange(w, dtype=torch.long, requires_grad=False).cuda().reshape(1, -1).repeat(h, 1)
-        #     # vrange = torch.arange(h, dtype=torch.long, requires_grad=False).cuda().reshape(-1, 1).repeat(1, w)
-        #     # ind = torch.stack([torch.zeros_like(cur_disp_low).cuda(),
-        #     #                    cur_disp_low,
-        #     #                    vrange.expand_as(cur_disp_low),
-        #     #                    urange.expand_as(cur_disp_low)],
-        #     #                   dim=-1)
-        #     mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, requires_grad=False).cuda()
-        #     mask_vol.scatter_(-1, cur_disp_low.clamp(max=self.config.MAXDISP - 1), mask)
-        #     disp_vol[mask_vol] = 1.0 - (cur_disp[mask] - cur_disp_low[mask])
-        #
-        #     mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, requires_grad=False).cuda()
-        #     mask_vol.scatter_(-1, cur_disp_high.clamp(max=self.config.MAXDISP - 1), mask)
-        #     disp_vol[mask_vol] = 1.0 - (cur_disp_high[mask] - cur_disp[mask])
-        #
-        #     # move disp dimension (3) to 1
-        #     disp_vol = disp_vol.transpose(1, 3)
-        #
-        #     rpn_feature_maps[stage-2] = torch.cat([rpn_feature_maps[stage-2], disp_vol], dim=1)
-        #     if stage < 6:
-        #         mrcnn_feature_maps[stage-2] = torch.cat([mrcnn_feature_maps[stage-2], disp_vol], dim=1)
+        # TODO Checking disp features
+        gt_depth = input[7].unsqueeze(1)
+        camera = input[6]
+        fx = camera[0]
+        gt_disp = fx * torch.tensor(self.config.BASELINE, dtype=torch.float, requires_grad=False).cuda() / \
+                        torch.clamp(gt_depth, min=1.0e-4)
+        for stage in range(2, 7):
+            h = rpn_feature_maps[stage-2].shape[2]
+            w = rpn_feature_maps[stage-2].shape[3]
+
+            cur_disp = torch.nn.functional.interpolate(gt_disp,
+                                                       size=(h, w),
+                                                       mode='bilinear').view(-1, h, w, 1)
+            disp_vol = torch.zeros((1,
+                                    h,
+                                    w,
+                                    self.config.MAXDISP),
+                                   dtype=torch.float, requires_grad=False).cuda()
+
+            cur_disp_low = cur_disp.floor().to(torch.long)
+            cur_disp_high = cur_disp.ceil().to(torch.long)
+            mask = cur_disp_high < self.config.MAXDISP
+
+            # urange = torch.arange(w, dtype=torch.long, requires_grad=False).cuda().reshape(1, -1).repeat(h, 1)
+            # vrange = torch.arange(h, dtype=torch.long, requires_grad=False).cuda().reshape(-1, 1).repeat(1, w)
+            # ind = torch.stack([torch.zeros_like(cur_disp_low).cuda(),
+            #                    cur_disp_low,
+            #                    vrange.expand_as(cur_disp_low),
+            #                    urange.expand_as(cur_disp_low)],
+            #                   dim=-1)
+            mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, requires_grad=False).cuda()
+            mask_vol.scatter_(-1, cur_disp_low.clamp(max=self.config.MAXDISP - 1), mask)
+            disp_vol[mask_vol] = 1.0 - (cur_disp[mask] - cur_disp_low[mask])
+
+            mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, requires_grad=False).cuda()
+            mask_vol.scatter_(-1, cur_disp_high.clamp(max=self.config.MAXDISP - 1), mask)
+            disp_vol[mask_vol] = 1.0 - (cur_disp_high[mask] - cur_disp[mask])
+
+            # move disp dimension (3) to 1
+            disp_vol = disp_vol.transpose(1, 3)
+
+            rpn_feature_maps[stage-2] = torch.cat([rpn_feature_maps[stage-2], disp_vol], dim=1)
+            if stage < 6:
+                mrcnn_feature_maps[stage-2] = torch.cat([mrcnn_feature_maps[stage-2], disp_vol], dim=1)
 
         feature_maps = [feature_map for index, feature_map in enumerate(rpn_feature_maps[::-1])]
         if self.config.PREDICT_DEPTH:
@@ -2464,7 +2464,8 @@ class AnchorScores(pl.LightningModule):
 
         camera = batch[30][0]
         for indexOffset in [0, 13]:
-            images, image_metas, rpn_match, rpn_bbox, gt_class_ids, gt_boxes, gt_masks, gt_parameters, gt_depth, extrinsics, gt_plane, gt_segmentation, plane_indices = \
+            [images, image_metas, rpn_match, rpn_bbox, gt_class_ids, gt_boxes, gt_masks, gt_parameters, gt_depth,
+             extrinsics, gt_plane, gt_segmentation, plane_indices] = \
                 batch[indexOffset + 0], batch[indexOffset + 1], batch[indexOffset + 2], batch[
                     indexOffset + 3], batch[indexOffset + 4], batch[indexOffset + 5], batch[
                     indexOffset + 6], batch[indexOffset + 7], batch[indexOffset + 8], batch[
@@ -2487,9 +2488,13 @@ class AnchorScores(pl.LightningModule):
 
         [rpn_class_logits, rpn_class, rpn_bbox] = self([input_pair[0]['image']])
 
-        rpn_class_loss = compute_rpn_class_loss(rpn_match, rpn_class_logits)
+        # rpn_class_loss = compute_rpn_class_loss(rpn_match, rpn_class_logits)
+        # return {'loss': rpn_class_loss, 'log': {'training_loss': rpn_class_loss}}
 
-        return {'loss': rpn_class_loss, 'log': {'training_loss': rpn_class_loss}}
+        target_probs = rpn_match.squeeze(0)
+        target_probs = torch.cat([1.0 - target_probs, target_probs], dim=-1)
+        rpn_kl_loss = F.kl_div(rpn_class_logits.squeeze(0), target_probs)
+        return {'loss': rpn_kl_loss, 'log': {'training_loss': rpn_kl_loss}}
 
 
 ############################################################

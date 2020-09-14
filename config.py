@@ -14,6 +14,7 @@ import torch
 # Don't use this class directly. Instead, sub-class it and override
 # the configurations you need to change.
 
+
 class Config(object):
     """Base configuration class. For custom configurations, create a
     sub-class that inherits from this one and override properties
@@ -97,7 +98,7 @@ class Config(object):
 
     # Image mean (RGB)
     MEAN_PIXEL = np.array([123.7, 116.8, 103.9])
-    MEAN_PIXEL_TENSOR = torch.from_numpy(MEAN_PIXEL.astype(np.float32)).cuda()
+    MEAN_PIXEL_TENSOR = torch.from_numpy(MEAN_PIXEL.astype(np.float32))
 
     # Number of ROIs per image to feed to classifier/mask heads
     # The Mask RCNN paper uses 512 but often the RPN doesn't generate
@@ -167,7 +168,7 @@ class Config(object):
 
     NUM_PARAMETER_CHANNELS = 0
     
-    def __init__(self, options):
+    def __init__(self, options, use_gpu=True):
         """Set values of computed attributes."""
         # Effective batch size
         if self.GPU_COUNT > 0:
@@ -184,9 +185,9 @@ class Config(object):
 
 
         with torch.no_grad():
-            self.URANGE_UNIT = ((torch.arange(self.IMAGE_MAX_DIM, requires_grad=False).cuda().float() + 0.5) / self.IMAGE_MAX_DIM).view((1, -1)).repeat(self.IMAGE_MIN_DIM, 1)
-            self.VRANGE_UNIT = ((torch.arange(self.IMAGE_MIN_DIM, requires_grad=False).cuda().float() + 0.5) / self.IMAGE_MIN_DIM).view((-1, 1)).repeat(1, self.IMAGE_MAX_DIM)
-            self.ONES = torch.ones(self.URANGE_UNIT.shape, requires_grad=False).cuda()
+            self.URANGE_UNIT = ((torch.arange(self.IMAGE_MAX_DIM, requires_grad=False).float() + 0.5) / self.IMAGE_MAX_DIM).view((1, -1)).repeat(self.IMAGE_MIN_DIM, 1)
+            self.VRANGE_UNIT = ((torch.arange(self.IMAGE_MIN_DIM, requires_grad=False).float() + 0.5) / self.IMAGE_MIN_DIM).view((-1, 1)).repeat(1, self.IMAGE_MAX_DIM)
+            self.ONES = torch.ones(self.URANGE_UNIT.shape, requires_grad=False)
             pass
         
         
@@ -210,6 +211,22 @@ class Config(object):
         
         self.BILINEAR_UPSAMPLING = 'bilinear' in options.suffix
         self.FITTING_TYPE = 0
+
+        if use_gpu:
+            self.URANGE_UNIT = self.URANGE_UNIT.cuda()
+            self.VRANGE_UNIT = self.VRANGE_UNIT.cuda()
+            self.ONES = self.ONES.cuda()
+            self.MEAN_PIXEL_TENSOR = self.MEAN_PIXEL_TENSOR.cuda()
+            if hasattr(self, 'ANCHOR_PLANES_TENSOR'):
+                self.ANCHOR_PLANES_TENSOR = self.ANCHOR_PLANES_TENSOR.cuda()
+            if hasattr(self, 'ANCHOR_NORMALS_TENSOR'):
+                self.ANCHOR_NORMALS_TENSOR = self.ANCHOR_NORMALS_TENSOR.cuda()
+            if hasattr(self, 'ANCHOR_OFFSETS_TENSOR'):
+                self.ANCHOR_OFFSETS_TENSOR = self.ANCHOR_OFFSETS_TENSOR.cuda()
+            if hasattr(self, 'ANCHOR_NORMALS_TENSOR'):
+                self.ANCHOR_NORMALS_TENSOR = self.ANCHOR_NORMALS_TENSOR.cuda()
+            if hasattr(self, 'ANCHOR_PLANES_TENSOR'):
+                self.ANCHOR_PLANES_TENSOR = self.ANCHOR_PLANES_TENSOR.cuda()
         return
     
     def loadAnchorPlanes(self, anchor_type = ''):
@@ -223,19 +240,19 @@ class Config(object):
                 self.ANCHOR_PLANES = np.load(self.dataFolder + '/anchor_planes.npy')
                 self.NUM_CLASSES = len(self.ANCHOR_PLANES) + 1
                 self.NUM_PARAMETERS = 4
-                self.ANCHOR_PLANES_TENSOR = torch.from_numpy(self.ANCHOR_PLANES.astype(np.float32)).cuda()
+                self.ANCHOR_PLANES_TENSOR = torch.from_numpy(self.ANCHOR_PLANES.astype(np.float32))
             elif self.ANCHOR_TYPE == 'joint_Nd':
                 self.ANCHOR_PLANES = np.load(self.dataFolder + '/anchor_planes_Nd.npy')            
                 self.NUM_CLASSES = len(self.ANCHOR_PLANES) + 1
                 self.NUM_PARAMETERS = 4
-                self.ANCHOR_PLANES_TENSOR = torch.from_numpy(self.ANCHOR_PLANES.astype(np.float32)).cuda()            
+                self.ANCHOR_PLANES_TENSOR = torch.from_numpy(self.ANCHOR_PLANES.astype(np.float32))
             elif self.ANCHOR_TYPE == 'Nd':
                 self.ANCHOR_NORMALS = np.load(self.dataFolder + '/anchor_planes_N.npy')
                 self.ANCHOR_OFFSETS = np.squeeze(np.load(self.dataFolder + '/anchor_planes_d.npy'), -1)
                 self.NUM_CLASSES = len(self.ANCHOR_NORMALS) * len(self.ANCHOR_OFFSETS) + 1
                 self.NUM_PARAMETERS = 4
-                self.ANCHOR_NORMALS_TENSOR = torch.from_numpy(self.ANCHOR_NORMALS.astype(np.float32)).cuda()
-                self.ANCHOR_OFFSETS_TENSOR = torch.from_numpy(self.ANCHOR_OFFSETS.astype(np.float32)).cuda()
+                self.ANCHOR_NORMALS_TENSOR = torch.from_numpy(self.ANCHOR_NORMALS.astype(np.float32))
+                self.ANCHOR_OFFSETS_TENSOR = torch.from_numpy(self.ANCHOR_OFFSETS.astype(np.float32))
             elif 'normal' in self.ANCHOR_TYPE:
                 if self.ANCHOR_TYPE == 'normal':
                     self.ANCHOR_NORMALS = np.load(self.dataFolder + '/anchor_planes_N.npy')
@@ -249,14 +266,14 @@ class Config(object):
                     pass
                 self.NUM_CLASSES = len(self.ANCHOR_NORMALS) + 1
                 self.NUM_PARAMETERS = 3
-                self.ANCHOR_NORMALS_TENSOR = torch.from_numpy(self.ANCHOR_NORMALS.astype(np.float32)).cuda()                
+                self.ANCHOR_NORMALS_TENSOR = torch.from_numpy(self.ANCHOR_NORMALS.astype(np.float32))
                 if self.OCCLUSION:
                     self.NUM_PARAMETER_CHANNELS = 1
                     pass
             elif self.ANCHOR_TYPE in ['patch', 'patch_Nd']:
                 self.ANCHOR_NORMALS = np.load(self.dataFolder + '/anchor_planes_N.npy')
                 self.NUM_CLASSES = len(self.ANCHOR_NORMALS) + 1
-                self.ANCHOR_NORMALS_TENSOR = torch.from_numpy(self.ANCHOR_NORMALS.astype(np.float32)).cuda()
+                self.ANCHOR_NORMALS_TENSOR = torch.from_numpy(self.ANCHOR_NORMALS.astype(np.float32))
                 if self.ANCHOR_TYPE == 'patch':
                     self.NUM_PARAMETER_CHANNELS = 1
                 elif self.ANCHOR_TYPE == 'patch_Nd':
@@ -283,7 +300,7 @@ class Config(object):
                             pass
                         continue
                     continue
-                self.ANCHOR_PLANES_TENSOR = torch.from_numpy(self.ANCHOR_PLANES.astype(np.float32)).cuda()            
+                self.ANCHOR_PLANES_TENSOR = torch.from_numpy(self.ANCHOR_PLANES.astype(np.float32))
             elif self.ANCHOR_TYPE == 'structure':
                 self.ANCHOR_PLANES = np.load(self.dataFolder + '/anchor_planes_structure.npy')
                 self.NUM_CLASSES = len(self.ANCHOR_PLANES) + 1
@@ -308,7 +325,7 @@ class Config(object):
                     self.TYPE_ANCHOR_OFFSETS.append(self.TYPE_ANCHOR_OFFSETS[-1] + num)
                     continue
                 self.NUM_PARAMETERS = 9
-                self.ANCHOR_PLANES_TENSOR = torch.from_numpy(self.ANCHOR_PLANES.astype(np.float32)).cuda()
+                self.ANCHOR_PLANES_TENSOR = torch.from_numpy(self.ANCHOR_PLANES.astype(np.float32))
             else:
                 assert(False)
                 pass
