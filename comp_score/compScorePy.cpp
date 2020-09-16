@@ -120,20 +120,32 @@ std::vector<py::array_t<float>> comp_score(py::array_t<float> points, int numIte
     return {retScores, retMasks, retPlanes};
 }
 
-py::array_t<int> comp_components(py::array_t<int> segments) {
-    py::array_t<float> retComp(py::array::ShapeContainer{segments.shape(0), segments.shape(1)});
+py::tuple comp_components(py::array_t<int> segments,
+                          //py::array_t<float> planes,
+                          //py::array_t<float> planeInfo,
+                          int segmentAreaThresh,
+                          float segmentAreaRatio)
+{
+    py::array_t<int> retComp(py::array::ShapeContainer{segments.shape(0), segments.shape(1)});
     for(int r = 0; r < segments.shape(0); ++r){
         for(int c = 0; c < segments.shape(1); ++c){
             retComp.mutable_at(r, c) = -1;
         }
     }
-    int nextId = 1;
+    int nextId = 0;
+    std::vector<int> newIdToOldId;
     for(int r = 0; r < segments.shape(0); ++r){
         for(int c = 0; c < segments.shape(1); ++c){
             if(retComp.at(r, c) == -1){
                 std::queue<std::pair<int, int>> q;
                 q.push(std::make_pair(r, c));
 
+                int area = 1;
+                int minx = c;
+                int maxx = c;
+                int miny = r;
+                int maxy = r;
+                int oldId = segments.at(r, c);
                 while(!q.empty()){
                     int curr = q.front().first;
                     int curc = q.front().second;
@@ -148,13 +160,77 @@ py::array_t<int> comp_components(py::array_t<int> segments) {
                         int nhr = curr + nh[ni][0];
                         int nhc = curc + nh[ni][1];
                         if(nhr >= 0 && nhr < segments.shape(0) && nhc >= 0 && nhc < segments.shape(1)){
-                            
+                            if(segments.at(nhr, nhc) == oldId &&
+                                retComp.at(nhr, nhc) != nextId &&
+                                (retComp.at(nhr, nhc) == -1 || newIdToOldId[retComp.at(nhr, nhc)] == -1))
+                            {
+                                int narea = area + 1;
+                                int nminx = std::min(minx, nhc);
+                                int nmaxx = std::max(maxx, nhc);
+                                int nlenx = nmaxx - nminx + 1;
+                                int nminy = std::min(miny, nhr);
+                                int nmaxy = std::max(maxy, nhr);
+                                int nleny = nmaxy - nminy + 1;
+                                if(nlenx > nleny){
+                                    nleny = std::max(nleny, nlenx / 2);
+                                }
+                                else{
+                                    nlenx = std::max(nlenx, nleny / 2);
+                                }
+                                int nboxarea = nlenx * nleny;
+                                if(narea < 100 || narea > nboxarea * segmentAreaRatio){
+                                    retComp.mutable_at(nhr, nhc) = nextId;
+                                    q.push(std::make_pair(nhr, nhc));
+
+                                    area = narea;
+                                    minx = nminx;
+                                    maxx = nmaxx;
+                                    miny = nminy;
+                                    maxy = nmaxy;
+                                }
+                            }
                         }
                     }
                 }
+                if(area > segmentAreaThresh){
+
+                    newIdToOldId.push_back(oldId);
+                }
+                else{
+                    newIdToOldId.push_back(-1);
+                }
+                ++nextId;
             }
         }
     }
+
+    // py::array_t<float> retPlanes(py::array::ShapeContainer{(long)newIdToOldId.size(), planes.shape(1)});
+    // py::array_t<float> retPlaneInfo(py::array::ShapeContainer{(long)newIdToOldId.size(), planeInfo.shape(1)});
+    // for(int i = 0; i < newIdToOldId.size(); ++i){
+    //     if(newIdToOldId[i] >= 0){
+    //         for(int v = 0; v < planes.shape(1); ++v){
+    //             retPlanes.mutable_at(i, v) = planes.at(newIdToOldId[i], v);
+    //         }
+    //         for(int v = 0; v < planeInfo.shape(1); ++v){
+    //             retPlaneInfo.mutable_at(i, v) = planeInfo.at(newIdToOldId[i], v);
+    //         }
+    //     }
+    //     else{
+    //         for(int v = 0; v < planes.shape(1); ++v){
+    //             retPlanes.mutable_at(i, v) = 0.0f;
+    //         }
+    //         for(int v = 0; v < planeInfo.shape(1); ++v){
+    //             retPlaneInfo.mutable_at(i, v) = 0.0f;
+    //         }
+    //     }
+    // }
+    // return py::make_tuple(retComp, retPlanes, retPlaneInfo);
+
+    py::array_t<int> retNewIdToOldId(py::array::ShapeContainer{(long)newIdToOldId.size()});
+    for(int i = 0; i < newIdToOldId.size(); ++i){
+        retNewIdToOldId.mutable_at(i) = newIdToOldId[i];
+    }
+    return py::make_tuple(retComp, retNewIdToOldId);
 }
 
 
@@ -166,6 +242,7 @@ PYBIND11_MODULE(comp_score_py, m) {
             .. autosummary::
                :toctree: _generate
                comp_score
+               comp_componenets
         )pbdoc";
 
     m.def("comp_score",
@@ -176,6 +253,18 @@ PYBIND11_MODULE(comp_score_py, m) {
             R"pbdoc(
             Compute score.
             Compute score.
+        )pbdoc");
+
+    m.def("comp_components",
+          &comp_components,
+          py::arg("segments"),
+          //py::arg("planes"),
+          //py::arg("planes_info"),
+          py::arg("segment_area_threshold"),
+          py::arg("segment_area_ratio"),
+          R"pbdoc(
+            Compute components.
+            Compute components.
         )pbdoc");
 
     #ifdef VERSION_INFO

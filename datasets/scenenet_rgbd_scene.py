@@ -10,6 +10,8 @@ import cv2
 import os
 import re
 
+import comp_score_py
+
 from utils import *
 
 
@@ -101,6 +103,36 @@ class ScenenetRgbdScene():
         newPlanes = planeNormals * planeOffsets
         return newPlanes
 
+    def makeBoxySegmentation(self, segmentation):
+        boxy_segm, new_id_to_old_id = comp_score_py.comp_components(segmentation, 200, 0.33)
+
+        segments, counts = np.unique(boxy_segm, return_counts=True)
+        segmentList = zip(segments.tolist(), counts.tolist())
+        segmentList = [segment for segment in segmentList if segment[0] not in [-1, 167771]]
+        segmentList = sorted(segmentList, key=lambda x: -x[1])
+
+        newPlanes = []
+        newPlaneInfo = []
+        newSegmentation = np.full(segmentation.shape, fill_value=-1, dtype=np.int32)
+
+        newIndex = 0
+        for new_id, count in segmentList:
+            if new_id_to_old_id[new_id] >= 0:
+                old_id = new_id_to_old_id[new_id]
+                if count < self.options.planeAreaThreshold:
+                    continue
+                if old_id >= len(self.planes):
+                    continue
+                if np.linalg.norm(self.planes[old_id]) < 1e-4:
+                    continue
+                newPlanes.append(self.planes[old_id])
+                newSegmentation[boxy_segm == new_id] = newIndex
+                newPlaneInfo.append(self.plane_info[old_id] + [old_id])
+                newIndex += 1
+                continue
+
+        return newSegmentation, newPlanes, newPlaneInfo
+
     def __len__(self):
         return len(self.frame_nums)
 
@@ -141,31 +173,34 @@ class ScenenetRgbdScene():
 
         segmentation = cv2.imread(segmentationPath, -1).astype(np.int32)
 
-        segmentation = (segmentation[:, :, 2] * 256 * 256 + segmentation[:, :, 1] * 256 + segmentation[:, :,
-                                                                                          0]) // 100 - 1
+        segmentation = (segmentation[:, :, 2] * 256 * 256 +
+                        segmentation[:, :, 1] * 256 +
+                        segmentation[:, :, 0]) // 100 - 1
 
-        segments, counts = np.unique(segmentation, return_counts=True)
-        segmentList = zip(segments.tolist(), counts.tolist())
-        segmentList = [segment for segment in segmentList if segment[0] not in [-1, 167771]]
-        segmentList = sorted(segmentList, key=lambda x: -x[1])
+        # segments, counts = np.unique(segmentation, return_counts=True)
+        # segmentList = zip(segments.tolist(), counts.tolist())
+        # segmentList = [segment for segment in segmentList if segment[0] not in [-1, 167771]]
+        # segmentList = sorted(segmentList, key=lambda x: -x[1])
+        #
+        # newPlanes = []
+        # newPlaneInfo = []
+        # newSegmentation = np.full(segmentation.shape, fill_value=-1, dtype=np.int32)
+        #
+        # newIndex = 0
+        # for oriIndex, count in segmentList:
+        #     if count < self.options.planeAreaThreshold:
+        #         continue
+        #     if oriIndex >= len(self.planes):
+        #         continue
+        #     if np.linalg.norm(self.planes[oriIndex]) < 1e-4:
+        #         continue
+        #     newPlanes.append(self.planes[oriIndex])
+        #     newSegmentation[segmentation == oriIndex] = newIndex
+        #     newPlaneInfo.append(self.plane_info[oriIndex] + [oriIndex])
+        #     newIndex += 1
+        #     continue
 
-        newPlanes = []
-        newPlaneInfo = []
-        newSegmentation = np.full(segmentation.shape, fill_value=-1, dtype=np.int32)
-
-        newIndex = 0
-        for oriIndex, count in segmentList:
-            if count < self.options.planeAreaThreshold:
-                continue
-            if oriIndex >= len(self.planes):
-                continue
-            if np.linalg.norm(self.planes[oriIndex]) < 1e-4:
-                continue
-            newPlanes.append(self.planes[oriIndex])
-            newSegmentation[segmentation == oriIndex] = newIndex
-            newPlaneInfo.append(self.plane_info[oriIndex] + [oriIndex])
-            newIndex += 1
-            continue
+        newSegmentation, newPlanes, newPlaneInfo = self.makeBoxySegmentation(segmentation)
 
         segmentation = newSegmentation
         planes_global = np.array(newPlanes)

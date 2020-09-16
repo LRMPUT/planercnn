@@ -1912,6 +1912,10 @@ class MaskRCNN(nn.Module):
         fx = camera[0]
         gt_disp = fx * torch.tensor(self.config.BASELINE, dtype=torch.float, requires_grad=False).cuda() / \
                         torch.clamp(gt_depth, min=1.0e-4)
+        if writer is not None:
+            writer.add_image('disp_feat/image',
+                             torch.clamp(unmold_image_torch(molded_images, self.config), min=0, max=255).squeeze(0),
+                             dataformats='CHW')
         for stage in range(2, 7):
             h = rpn_feature_maps[stage-2].shape[2]
             w = rpn_feature_maps[stage-2].shape[3]
@@ -1945,7 +1949,15 @@ class MaskRCNN(nn.Module):
             disp_vol[mask_vol] = 1.0 - (cur_disp_high[mask] - cur_disp[mask])
 
             # move disp dimension (3) to 1
-            disp_vol = disp_vol.transpose(1, 3)
+            disp_vol = disp_vol.transpose(0, 3).squeeze(-1).unsqueeze(0)
+
+            pred = disparityregression(self.config.MAXDISP)(disp_vol)
+            if writer is not None:
+                min_d = pred.min()
+                max_d = pred.max()
+                writer.add_image('disp_feat/disp_est', (pred.squeeze(0) - min_d) / (max_d - min_d), dataformats='HW')
+                writer.add_image('disp_feat/disp_gt', (cur_disp.squeeze(0).squeeze(-1) - min_d) / (max_d - min_d), dataformats='HW')
+                writer.flush()
 
             rpn_feature_maps[stage-2] = torch.cat([rpn_feature_maps[stage-2], disp_vol], dim=1)
             if stage < 6:
