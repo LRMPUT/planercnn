@@ -1438,48 +1438,64 @@ def roi_align(input, boxes, output_size):
     return torchvision.ops.roi_align(input, boxes_pt, output_size)
 
 
-# class ColorPalette:
-#     def __init__(self, numColors):
-#         np.random.seed(2)
-#         self.colorMap = np.array([[255, 0, 0],
-#                                   [0, 255, 0],
-#                                   [0, 0, 255],
-#                                   [80, 128, 255],
-#                                   [255, 230, 180],
-#                                   [255, 0, 255],
-#                                   [0, 255, 255],
-#                                   [100, 0, 0],
-#                                   [0, 100, 0],
-#                                   [255, 255, 0],
-#                                   [50, 150, 0],
-#                                   [200, 255, 255],
-#                                   [255, 200, 255],
-#                                   [128, 128, 80],
-#                                   [0, 50, 128],
-#                                   [0, 100, 100],
-#                                   [0, 255, 128],
-#                                   [0, 128, 255],
-#                                   [255, 0, 128],
-#                                   [128, 0, 255],
-#                                   [255, 128, 0],
-#                                   [128, 255, 0],
-#         ])
+def plane_to_plane_dist(plane1, plane2):
+    plane1_d = 1.0 / torch.norm(plane1)
+    p1 = plane1 * plane1_d * plane1_d
+    # d = (p1.dot(plane2) - 1.0) / plane2.norm()
+    d = (p1.dot(plane2) - 1.0)
+
+    return d
+
+
+def plane_to_plane_dot(plane1, plane2):
+    return plane1.dot(plane2) / (torch.norm(plane1) * torch.norm(plane2))
+
+
+def calc_iou(box1, box2):
+    y1_i = max(box1[0], box2[0])
+    y2_i = min(box1[2], box2[2])
+    x1_i = max(box1[1], box2[1])
+    x2_i = min(box1[3], box2[3])
+
+    area_i = max(y2_i - y1_i, 0.0) * max(x2_i - x1_i, 0.0)
+    area_1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    area_2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+    # iou = area_i / (area_1 + area_2 - area_i)
+    iou = area_i / area_2
+
+    if iou > 1:
+        print('iou = ', iou)
+
+    return iou
+
+
+# def remove_nms(anchors, scores, planes, iou_thresh=0.3, score_thresh=0.9):
+#     score_mask = scores > score_thresh
+#     score_idxs = np.where(score_mask)[0]
+#     anchors_s = anchors[score_mask]
+#     scores_s = scores[score_mask]
+#     planes_s = planes[score_mask]
 #
-#         if numColors > self.colorMap.shape[0]:
-#             self.colorMap = np.concatenate([self.colorMap, np.random.randint(255, size = (numColors - self.colorMap.shape[0], 3))], axis=0)
-#             pass
+#     sizes_s = (anchors_s[:, 2] - anchors_s[:, 0]) * (anchors_s[:, 3] - anchors_s[:, 1])
+#     # sort according to size and then score
+#     sort_idxs = np.argsort(-(sizes_s * scores_s))
 #
-#         return
+#     # max_idx = 0
+#     # for i in range(anchors.shape[0]):
+#     #     if scores[sort_idxs[i]] < 0.9:
+#     #         max_idx = i
+#     #         break
 #
-#     def getColorMap(self):
-#         return self.colorMap
+#     print('nms on %d anchors' % score_idxs.shape[0])
+#     keep, num_to_keep, _ = nms.nms(torch.from_numpy(anchors_s).cuda(),
+#                                    torch.from_numpy(sizes_s * scores_s).cuda(),
+#                                    overlap=iou_thresh,
+#                                    top_k=400)
+#     keep = keep[:num_to_keep].cpu().numpy()
+#     print('keep.shape = ', keep.shape)
+#     keep_idxs_all = score_idxs[keep]
 #
-#     def getColor(self, index):
-#         if index >= self.colorMap.shape[0]:
-#             return np.random.randint(255, size = (3))
-#         else:
-#             return self.colorMap[index]
-#             pass
+#     return keep_idxs_all
 
 
 if __name__ == '__main__':

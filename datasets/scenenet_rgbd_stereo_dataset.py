@@ -219,7 +219,9 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
             ## RPN Targets
             if self.load_scores:
                 rpn_match = scores_a
-                rpn_bbox = np.zeros((rpn_match.shape[0], 4), dtype=np.float)
+                # rpn_bbox = np.zeros((rpn_match.shape[0], 4), dtype=np.float)
+                # TOOD Hack to pass plane parameters
+                rpn_bbox = planes_a
             else:
                 rpn_match, rpn_bbox = build_rpn_targets(image.shape, self.anchors,
                                                         gt_class_ids, gt_boxes, self.config)

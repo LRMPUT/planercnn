@@ -53,7 +53,7 @@ def train(options):
 
     print('the number of images', len(dataset))
 
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=1)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=2)
     # dataloader_test = DataLoader(dataset_test, batch_size=1, shuffle=True)
 
     model = MaskRCNN(config)
@@ -182,10 +182,11 @@ def train(options):
                     target_class_ids, mrcnn_class_logits,
                     target_deltas, mrcnn_bbox, target_mask, mrcnn_mask, target_parameters, mrcnn_parameters)
 
-            # losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss]
-            losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss]
+            losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss]
+            # losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss]
             if writer is not None and sampleIndex % 100 == 0:
                 writer.add_scalar('maskrcnn_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
+                writer.add_scalar('mrcnn_parameter_loss', mrcnn_parameter_loss, global_step=epoch * len(dataset) + sampleIndex)
 
             gt_depth = input_pair[0]['depth']
             if config.PREDICT_NORMAL_NP:

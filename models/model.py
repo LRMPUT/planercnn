@@ -996,6 +996,85 @@ class RPN(nn.Module):
 
 
 ############################################################
+#  Region Proposal Network anchor
+############################################################
+
+class RPNanchor(nn.Module):
+    """Builds the model of Region Proposal Network.
+
+    anchors_per_location: number of anchors per pixel in the feature map
+    anchor_stride: Controls the density of anchors. Typically 1 (anchors for
+                   every pixel in the feature map), or 2 (every other pixel).
+
+    Returns:
+        rpn_logits: [batch, H, W, 2] Anchor classifier logits (before softmax)
+        rpn_probs: [batch, W, W, 2] Anchor classifier probabilities.
+        rpn_bbox: [batch, H, W, (dy, dx, log(dh), log(dw))] Deltas to be
+                  applied to anchors.
+    """
+
+    def __init__(self, anchors_per_location, anchor_stride, depth, desc_len):
+        super(RPNanchor, self).__init__()
+        self.anchors_per_location = anchors_per_location
+        self.anchor_stride = anchor_stride
+        self.depth = depth
+        self.desc_len = desc_len
+
+        self.padding = SamePad2d(kernel_size=3, stride=self.anchor_stride)
+        self.conv_shared = nn.Conv2d(self.depth, 512, kernel_size=3, stride=self.anchor_stride)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv_class = nn.Conv2d(512, 2 * anchors_per_location, kernel_size=1, stride=1)
+        self.softmax = nn.Softmax(dim=2)
+        self.conv_desc = nn.Conv2d(512, self.desc_len * anchors_per_location, kernel_size=1, stride=1)
+
+    def forward(self, x):
+        ## Shared convolutional base of the RPN
+        x = self.relu(self.conv_shared(self.padding(x)))
+
+        ## Anchor Score. [batch, anchors per location * 2, height, width].
+        rpn_class_logits = self.conv_class(x)
+
+        ## Reshape to [batch, 2, anchors]
+        rpn_class_logits = rpn_class_logits.permute(0,2,3,1)
+        rpn_class_logits = rpn_class_logits.contiguous()
+        rpn_class_logits = rpn_class_logits.view(x.size()[0], -1, 2)
+
+        ## Softmax on last dimension of BG/FG.
+        rpn_probs = self.softmax(rpn_class_logits)
+
+        rpn_desc = self.conv_desc(x)
+
+        ## Reshape to [batch, 4, anchors]
+        rpn_desc = rpn_desc.permute(0,2,3,1)
+        rpn_desc = rpn_desc.contiguous()
+        rpn_desc = rpn_desc.view(x.size()[0], -1, self.desc_len)
+
+        return [rpn_class_logits, rpn_probs, rpn_desc]
+
+
+class DescDist(nn.Module):
+    """Builds the model of descriptor distance computation.
+
+    desc_len
+
+    Returns:
+        score: [batch, 2]
+    """
+
+    def __init__(self, desc_len):
+        super(DescDist, self).__init__()
+        self.desc_len = desc_len
+
+        self.fc1 = nn.Linear(2 * self.desc_len, 2)
+        self.softmax = nn.Softmax()
+
+    def forward(self, x1, x2):
+        score_logit = self.fc1(torch.cat([x1, x2], dim=1))
+        score = self.softmax(score_logit, dim=-1)
+        return score
+
+
+############################################################
 #  Feature Pyramid Network Heads
 ############################################################
 
@@ -1660,20 +1739,20 @@ class MaskRCNN(nn.Module):
             self.anchors = self.anchors.cuda()
 
         ## RPN
-        self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256 + config.MAXDISP)
-        # self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256)
+        # self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256 + config.MAXDISP)
+        self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256)
 
         ## Coordinate feature
         self.coordinates = nn.Conv2d(3, 64, kernel_size=1, stride=1)
         
         ## FPN Classifier
         self.debug = False
-        self.classifier = Classifier(256 + config.MAXDISP, config.POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES, config.NUM_PARAMETERS, debug=self.debug)
-        # self.classifier = Classifier(256, config.POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES, config.NUM_PARAMETERS, debug=self.debug)
+        # self.classifier = Classifier(256 + config.MAXDISP, config.POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES, config.NUM_PARAMETERS, debug=self.debug)
+        self.classifier = Classifier(256, config.POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES, config.NUM_PARAMETERS, debug=self.debug)
 
         ## FPN Mask
-        self.mask = Mask(config, 256 + config.MAXDISP, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
-        # self.mask = Mask(config, 256, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
+        # self.mask = Mask(config, 256 + config.MAXDISP, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
+        self.mask = Mask(config, 256, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
 
         if self.config.PREDICT_DEPTH:
             if self.config.PREDICT_STEREO:
@@ -1683,11 +1762,11 @@ class MaskRCNN(nn.Module):
                                          256)
             else:
                 if self.config.PREDICT_BOUNDARY:
-                    self.depth = Depth(256 + config.MAXDISP, num_output_channels=3)
-                    # self.depth = Depth(256, num_output_channels=3)
+                    # self.depth = Depth(256 + config.MAXDISP, num_output_channels=3)
+                    self.depth = Depth(256, num_output_channels=3)
                 else:
-                    self.depth = Depth(256 + config.MAXDISP, num_output_channels=1)
-                    # self.depth = Depth(256, num_output_channels=1)
+                    # self.depth = Depth(256 + config.MAXDISP, num_output_channels=1)
+                    self.depth = Depth(256, num_output_channels=1)
                     pass
                 pass
 
@@ -1906,62 +1985,62 @@ class MaskRCNN(nn.Module):
         rpn_feature_maps = [p2_out, p3_out, p4_out, p5_out, p6_out]
         mrcnn_feature_maps = [p2_out, p3_out, p4_out, p5_out]
 
-        # TODO Checking disp features
-        gt_depth = input[7].unsqueeze(1)
-        camera = input[6]
-        fx = camera[0]
-        gt_disp = fx * torch.tensor(self.config.BASELINE, dtype=torch.float, requires_grad=False).cuda() / \
-                        torch.clamp(gt_depth, min=1.0e-4)
-        if writer is not None:
-            writer.add_image('disp_feat/image',
-                             torch.clamp(unmold_image_torch(molded_images, self.config), min=0, max=255).squeeze(0),
-                             dataformats='CHW')
-        for stage in range(2, 7):
-            h = rpn_feature_maps[stage-2].shape[2]
-            w = rpn_feature_maps[stage-2].shape[3]
-
-            cur_disp = torch.nn.functional.interpolate(gt_disp,
-                                                       size=(h, w),
-                                                       mode='bilinear').view(-1, h, w, 1)
-            disp_vol = torch.zeros((1,
-                                    h,
-                                    w,
-                                    self.config.MAXDISP),
-                                   dtype=torch.float, requires_grad=False).cuda()
-
-            cur_disp_low = cur_disp.floor().to(torch.long)
-            cur_disp_high = cur_disp.ceil().to(torch.long)
-            mask = cur_disp_high < self.config.MAXDISP
-
-            # urange = torch.arange(w, dtype=torch.long, requires_grad=False).cuda().reshape(1, -1).repeat(h, 1)
-            # vrange = torch.arange(h, dtype=torch.long, requires_grad=False).cuda().reshape(-1, 1).repeat(1, w)
-            # ind = torch.stack([torch.zeros_like(cur_disp_low).cuda(),
-            #                    cur_disp_low,
-            #                    vrange.expand_as(cur_disp_low),
-            #                    urange.expand_as(cur_disp_low)],
-            #                   dim=-1)
-            mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, requires_grad=False).cuda()
-            mask_vol.scatter_(-1, cur_disp_low.clamp(max=self.config.MAXDISP - 1), mask)
-            disp_vol[mask_vol] = 1.0 - (cur_disp[mask] - cur_disp_low[mask])
-
-            mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, requires_grad=False).cuda()
-            mask_vol.scatter_(-1, cur_disp_high.clamp(max=self.config.MAXDISP - 1), mask)
-            disp_vol[mask_vol] = 1.0 - (cur_disp_high[mask] - cur_disp[mask])
-
-            # move disp dimension (3) to 1
-            disp_vol = disp_vol.transpose(0, 3).squeeze(-1).unsqueeze(0)
-
-            pred = disparityregression(self.config.MAXDISP)(disp_vol)
-            if writer is not None:
-                min_d = pred.min()
-                max_d = pred.max()
-                writer.add_image('disp_feat/disp_est', (pred.squeeze(0) - min_d) / (max_d - min_d), dataformats='HW')
-                writer.add_image('disp_feat/disp_gt', (cur_disp.squeeze(0).squeeze(-1) - min_d) / (max_d - min_d), dataformats='HW')
-                writer.flush()
-
-            rpn_feature_maps[stage-2] = torch.cat([rpn_feature_maps[stage-2], disp_vol], dim=1)
-            if stage < 6:
-                mrcnn_feature_maps[stage-2] = torch.cat([mrcnn_feature_maps[stage-2], disp_vol], dim=1)
+        # # TODO Checking disp features
+        # gt_depth = input[7].unsqueeze(1)
+        # camera = input[6]
+        # fx = camera[0]
+        # gt_disp = fx * torch.tensor(self.config.BASELINE, dtype=torch.float, requires_grad=False).cuda() / \
+        #                 torch.clamp(gt_depth, min=1.0e-4)
+        # if writer is not None:
+        #     writer.add_image('disp_feat/image',
+        #                      torch.clamp(unmold_image_torch(molded_images, self.config), min=0, max=255).squeeze(0),
+        #                      dataformats='CHW')
+        # for stage in range(2, 7):
+        #     h = rpn_feature_maps[stage-2].shape[2]
+        #     w = rpn_feature_maps[stage-2].shape[3]
+        #
+        #     cur_disp = torch.nn.functional.interpolate(gt_disp,
+        #                                                size=(h, w),
+        #                                                mode='bilinear').view(-1, h, w, 1)
+        #     disp_vol = torch.zeros((1,
+        #                             h,
+        #                             w,
+        #                             self.config.MAXDISP),
+        #                            dtype=torch.float, requires_grad=False).cuda()
+        #
+        #     cur_disp_low = cur_disp.floor().to(torch.long)
+        #     cur_disp_high = cur_disp.ceil().to(torch.long)
+        #     mask = cur_disp_high < self.config.MAXDISP
+        #
+        #     # urange = torch.arange(w, dtype=torch.long, requires_grad=False).cuda().reshape(1, -1).repeat(h, 1)
+        #     # vrange = torch.arange(h, dtype=torch.long, requires_grad=False).cuda().reshape(-1, 1).repeat(1, w)
+        #     # ind = torch.stack([torch.zeros_like(cur_disp_low).cuda(),
+        #     #                    cur_disp_low,
+        #     #                    vrange.expand_as(cur_disp_low),
+        #     #                    urange.expand_as(cur_disp_low)],
+        #     #                   dim=-1)
+        #     mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, requires_grad=False).cuda()
+        #     mask_vol.scatter_(-1, cur_disp_low.clamp(max=self.config.MAXDISP - 1), mask)
+        #     disp_vol[mask_vol] = 1.0 - (cur_disp[mask] - cur_disp_low[mask])
+        #
+        #     mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, requires_grad=False).cuda()
+        #     mask_vol.scatter_(-1, cur_disp_high.clamp(max=self.config.MAXDISP - 1), mask)
+        #     disp_vol[mask_vol] = 1.0 - (cur_disp_high[mask] - cur_disp[mask])
+        #
+        #     # move disp dimension (3) to 1
+        #     disp_vol = disp_vol.transpose(0, 3).squeeze(-1).unsqueeze(0)
+        #
+        #     pred = disparityregression(self.config.MAXDISP)(disp_vol)
+        #     if writer is not None:
+        #         min_d = pred.min()
+        #         max_d = pred.max()
+        #         writer.add_image('disp_feat/disp_est', (pred.squeeze(0) - min_d) / (max_d - min_d), dataformats='HW')
+        #         writer.add_image('disp_feat/disp_gt', (cur_disp.squeeze(0).squeeze(-1) - min_d) / (max_d - min_d), dataformats='HW')
+        #         writer.flush()
+        #
+        #     rpn_feature_maps[stage-2] = torch.cat([rpn_feature_maps[stage-2], disp_vol], dim=1)
+        #     if stage < 6:
+        #         mrcnn_feature_maps[stage-2] = torch.cat([mrcnn_feature_maps[stage-2], disp_vol], dim=1)
 
         feature_maps = [feature_map for index, feature_map in enumerate(rpn_feature_maps[::-1])]
         if self.config.PREDICT_DEPTH:
@@ -2366,7 +2445,9 @@ class AnchorScores(pl.LightningModule):
                                                                                 self.config.RPN_ANCHOR_STRIDE)).float(),
                                 requires_grad=False)
         ## RPN
-        self.rpn = RPN(len(self.config.RPN_ANCHOR_RATIOS), self.config.RPN_ANCHOR_STRIDE, 256)
+        self.rpn = RPNanchor(len(self.config.RPN_ANCHOR_RATIOS), self.config.RPN_ANCHOR_STRIDE, 256, 64)
+
+        self.desc_dist = DescDist(64)
 
         ## Fix batch norm layers
         def set_bn_fix(m):
@@ -2498,15 +2579,122 @@ class AnchorScores(pl.LightningModule):
                                'rpn_bbox': rpn_bbox,
                                'camera': camera})
 
-        [rpn_class_logits, rpn_class, rpn_bbox] = self([input_pair[0]['image']])
+        [rpn_class_logits, rpn_probs, rpn_desc] = self([input_pair[0]['image']])
+
+        rpn_target_class = torch.where(input_pair[0]['rpn_match'] > 0.9,
+                                       torch.tensor(1, dtype=torch.long, requires_grad=False).cuda(),
+                                       torch.tensor(0, dtype=torch.long, requires_grad=False).cuda())
+        rpn_cross_loss = F.cross_entropy(rpn_class_logits.squeeze(0), rpn_target_class.squeeze(0).squeeze(-1))
+
+        # # probability of being planar
+        # positive_idxs = torch.nonzero(rpn_target_class[0] == 1)[0]
+        # if len(positive_idxs) > 0:
+        #     anchors_s = self.anchors[positive_idxs]
+        #     # TOOD Hack to pass plane parameters
+        #     planes_s = input_pair[0]['rpn_bbox'][positive_idxs]
+        #     sizes_s = (anchors_s[:, 2] - anchors_s[:, 0]) * (anchors_s[:, 3] - anchors_s[:, 1])
+        #     keep, num_to_keep, _ = nms.nms(anchors_s,
+        #                                    sizes_s,
+        #                                    overlap=0.5,
+        #                                    top_k=400)
+        #     keep = keep[:num_to_keep]
+        #
+        #     anchors_nms = anchors_s[keep]
+        #     planes_nms = planes_s[keep]
+        #
+        #     positive_matches = [] * anchors_nms.shape[0]
+        #     negative_matches = [] * anchors_nms.shape[0]
+        #
+        #     merge_thresh = 0.4
+        #     for i in range(anchors_nms.shape[0]):
+        #         for j in range(i + 1, anchors_nms.shape[0]):
+        #             iou1 = calc_iou(anchors_nms[i], anchors_nms[j])
+        #             iou2 = calc_iou(anchors_nms[j], anchors_nms[i])
+        #             norm_dot = plane_to_plane_dot(planes_nms[i], planes_nms[j])
+        #             # dist = plane_to_plane_dist(planes_nms[i], planes_nms[j])
+        #             if iou1 > merge_thresh or iou2 > merge_thresh:
+        #                 if norm_dot > np.cos(10.0 * np.pi / 180.0):
+        #                     positive_matches[i].append(j)
+        #                     positive_matches[j].append(i)
+        #                 else:
+        #                     negative_matches[i].append(j)
+        #                     negative_matches[j].append(i)
+
+        return {'loss': rpn_cross_loss, 'log': {'training_loss': rpn_cross_loss}}
 
         # rpn_class_loss = compute_rpn_class_loss(rpn_match, rpn_class_logits)
         # return {'loss': rpn_class_loss, 'log': {'training_loss': rpn_class_loss}}
 
-        target_probs = rpn_match.squeeze(0)
-        target_probs = torch.cat([1.0 - target_probs, target_probs], dim=-1)
-        rpn_kl_loss = F.kl_div(rpn_class_logits.squeeze(0), target_probs)
-        return {'loss': rpn_kl_loss, 'log': {'training_loss': rpn_kl_loss}}
+        # target_probs = rpn_match.squeeze(0)
+        # target_probs = torch.cat([1.0 - target_probs, target_probs], dim=-1)
+        # rpn_kl_loss = F.kl_div(rpn_class_logits.squeeze(0), target_probs)
+        # return {'loss': rpn_kl_loss, 'log': {'training_loss': rpn_kl_loss}}
+
+    def validation_step(self, batch, batch_idx):
+        input_pair = []
+        detection_pair = []
+        dicts_pair = []
+
+        camera = batch[30][0]
+        for indexOffset in [0, 13]:
+            [images, image_metas, rpn_match, rpn_bbox, gt_class_ids, gt_boxes, gt_masks, gt_parameters, gt_depth,
+             extrinsics, gt_plane, gt_segmentation, plane_indices] = \
+                batch[indexOffset + 0], batch[indexOffset + 1], batch[indexOffset + 2], batch[
+                    indexOffset + 3], batch[indexOffset + 4], batch[indexOffset + 5], batch[
+                    indexOffset + 6], batch[indexOffset + 7], batch[indexOffset + 8], batch[
+                    indexOffset + 9], batch[indexOffset + 10], batch[indexOffset + 11], batch[
+                    indexOffset + 12]
+
+            input_pair.append({'image': images,
+                               'image_meta': image_metas,
+                               'depth': gt_depth,
+                               'mask': gt_masks,
+                               'bbox': gt_boxes,
+                               'extrinsics': extrinsics,
+                               'segmentation': gt_segmentation,
+                               'class_ids': gt_class_ids,
+                               'parameters': gt_parameters,
+                               'plane': gt_plane,
+                               'rpn_match': rpn_match,
+                               'rpn_bbox': rpn_bbox,
+                               'camera': camera})
+
+        [rpn_class_logits, rpn_probs, rpn_desc] = self([input_pair[0]['image']])
+
+        # rpn_class_loss = compute_rpn_class_loss(rpn_match, rpn_class_logits)
+        # return {'loss': rpn_class_loss, 'log': {'training_loss': rpn_class_loss}}
+
+        # target_probs = rpn_match.squeeze(0)
+        # target_probs = torch.cat([1.0 - target_probs, target_probs], dim=-1)
+        # rpn_kl_loss = F.kl_div(rpn_class_logits.squeeze(0), target_probs)
+
+        rpn_target_class = torch.where(input_pair[0]['rpn_match'] > 0.9,
+                                       torch.tensor(1, dtype=torch.long, requires_grad=False).cuda(),
+                                       torch.tensor(0, dtype=torch.long, requires_grad=False).cuda())
+        rpn_cross_loss = F.cross_entropy(rpn_class_logits.squeeze(0), rpn_target_class.squeeze(0).squeeze(-1))
+
+        box_image = input_pair[0]['image'].cpu().numpy()
+        box_image = np.ascontiguousarray(np.transpose(box_image, axes=[0, 2, 3, 1]).squeeze(0))
+        box_image = unmold_image(box_image, self.config)
+        box_image_gt = box_image.copy()
+        h = box_image.shape[0]
+        w = box_image.shape[1]
+        for idx, anchor in enumerate(self.anchors):
+            # y, x
+            pt1 = [anchor[0], anchor[1] + 80]
+            pt2 = [anchor[2], anchor[3] + 80]
+
+            # probability of being planar
+            if rpn_probs[0, idx, 1] > 0.5:
+                cv2.rectangle(box_image, (pt1[0], pt1[1]), (pt2[0], pt2[1]), (0, 0, 255), 2)
+
+            if rpn_target_class[0, idx, 0] == 1:
+                cv2.rectangle(box_image_gt, (pt1[0], pt1[1]), (pt2[0], pt2[1]), (0, 0, 255), 2)
+
+        self.logger.experiment.add_image('val/boxes', box_image, dataformats='HWC', global_step=self.global_step)
+        self.logger.experiment.add_image('val/boxes_gt', box_image_gt, dataformats='HWC', global_step=self.global_step)
+
+        return {'loss': rpn_cross_loss, 'log': {'val_loss': rpn_cross_loss}}
 
 
 ############################################################

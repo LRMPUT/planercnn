@@ -104,7 +104,7 @@ class ScenenetRgbdScene():
         return newPlanes
 
     def makeBoxySegmentation(self, segmentation):
-        boxy_segm, new_id_to_old_id = comp_score_py.comp_components(segmentation, 200, 0.33)
+        boxy_segm, new_id_to_old_id = comp_score_py.comp_components(segmentation, 200, 0.5)
 
         segments, counts = np.unique(boxy_segm, return_counts=True)
         segmentList = zip(segments.tolist(), counts.tolist())

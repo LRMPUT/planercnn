@@ -32,9 +32,14 @@ def train(options):
     # dataset = ScenenetRgbdDataset(options, config, split='train', random=False)
     train_loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=2)
 
+    dataset_test = ScenenetRgbdDataset(options, config, split='test', random=False, load_scores=True)
+    test_loader = DataLoader(dataset_test, batch_size=1, shuffle=False, num_workers=2)
+
     model = AnchorScores(options, config)
-    trainer = pl.Trainer(gpus=1)
-    trainer.fit(model, train_loader)
+    # trainer = pl.Trainer(gpus=1, limit_val_batches=10, val_check_interval=500)
+    trainer = pl.Trainer(gpus=1, limit_val_batches=10, val_check_interval=500,
+                         resume_from_checkpoint='lightning_logs/version_3/checkpoints/epoch=6.ckpt')
+    trainer.fit(model, train_loader, test_loader)
 
 
 if __name__ == '__main__':

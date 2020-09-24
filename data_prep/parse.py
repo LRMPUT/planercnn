@@ -1402,9 +1402,9 @@ def main():
     soft, hard = resource.getrlimit(resource.RLIMIT_AS)
     resource.setrlimit(resource.RLIMIT_AS, (48 * 1024 * 1024 * 1024, hard))
 
-    scene_ids = fnmatch.filter(os.listdir(ROOT_FOLDER), 'scene0???_00')
+    scene_ids = fnmatch.filter(os.listdir(ROOT_FOLDER), 'scene02??_00')
     scene_ids = sorted(scene_ids)
-    scene_ids = ['scene0400_00']
+    # scene_ids = ['scene0400_00']
     print(scene_ids)
 
     np.random.seed(13)
@@ -1457,13 +1457,13 @@ def main():
             print('computing depth and normals')
             compute_depth_and_normals(scene_id)
 
-        # print('removing invalid frames')
-        # remove_invalid(scene_id)
+        print('removing invalid frames')
+        remove_invalid(scene_id)
 
         continue
 
-    print('selecting splits')
-    select_splits(scene_ids)
+    # print('selecting splits')
+    # select_splits(scene_ids)
 
 
 if __name__=='__main__':

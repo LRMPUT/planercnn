@@ -60,30 +60,30 @@ class PlaneRCNNDetector():
             pass
 
         ## Indicates that the refinement network is trained separately        
-        separate = modelType == 'refine'
+        # separate = modelType == 'refine'
 
-        if not separate:
-            if options.startEpoch >= 0:
-                self.model.load_state_dict(torch.load(checkpoint_dir + '/checkpoint_' + str(options.startEpoch) + '.pth'))
-            else:
-                self.model.load_state_dict(torch.load(checkpoint_dir + '/checkpoint.pth'))
-                pass
-            pass
+        # if not separate:
+        #     if options.startEpoch >= 0:
+        #         self.model.load_state_dict(torch.load(checkpoint_dir + '/checkpoint_' + str(options.startEpoch) + '.pth'))
+        #     else:
+        self.model.load_state_dict(torch.load(checkpoint_dir + '/checkpoint.pth'))
+            #     pass
+            # pass
 
         if 'refine' in modelType or 'final' in modelType:
             self.refine_model = RefineModel(options)
 
             self.refine_model.cuda()
             self.refine_model.eval()
-            if not separate:
-                state_dict = torch.load(checkpoint_dir + '/checkpoint_refine.pth')
-                self.refine_model.load_state_dict(state_dict)
-                pass
-            else:
-                self.model.load_state_dict(torch.load('checkpoint/pair_' + options.anchorType + '_pair/checkpoint.pth'))
-                self.refine_model.load_state_dict(torch.load('checkpoint/instance_normal_refine_mask_softmax_valid/checkpoint_refine.pth'))
-                pass
+            # if not separate:
+            state_dict = torch.load(checkpoint_dir + '/checkpoint_refine.pth')
+            self.refine_model.load_state_dict(state_dict)
             pass
+            # else:
+            #     self.model.load_state_dict(torch.load('checkpoint/pair_' + options.anchorType + '_pair/checkpoint.pth'))
+            #     self.refine_model.load_state_dict(torch.load('checkpoint/instance_normal_refine_mask_softmax_valid/checkpoint_refine.pth'))
+            #     pass
+            # pass
 
         return
 
@@ -537,7 +537,7 @@ def evaluate(options):
 
     print('the number of images', len(dataset))
 
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=1)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=2)
 
     epoch_losses = []
     data_iterator = tqdm(dataloader, total=len(dataset))

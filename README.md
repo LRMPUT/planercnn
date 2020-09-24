@@ -164,4 +164,9 @@ If you have any questions, please contact the primary author [Chen Liu &lt;chenl
 ## Acknowledgement
 Our implementation uses the nms/roialign from the Mask R-CNN implementation from [pytorch-mask-rcnn](https://github.com/multimodallearning/pytorch-mask-rcnn), which is licensed under [MIT License](https://github.com/multimodallearning/pytorch-mask-rcnn/blob/master/LICENSE)
 
+## Rendering on headless machine
 
+```
+Xvfb :99 -screen 0 1024x768x24 &
+export DISPLAY=:99
+```
