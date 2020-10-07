@@ -4,6 +4,7 @@ Licensed under the CC BY-NC-SA 4.0 license
 (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode).
 """
 
+import cv2
 import torch
 from torch.utils.data import Dataset
 
@@ -11,7 +12,6 @@ import numpy as np
 import time
 import utils as utils
 import os
-import cv2
 
 from datasets.scenenet_rgbd_scene import ScenenetRgbdScene
 from datasets.scenenet_rgbd_dataset import *
@@ -43,6 +43,8 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
         return
 
     def __getitem__(self, index):
+        cv2.setNumThreads(0)
+
         if self.random:
             index = np.random.randint(len(self.sceneImageIndices))
         else:

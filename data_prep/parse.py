@@ -1372,7 +1372,7 @@ def select_splits(scene_ids):
         with open(os.path.join(ROOT_FOLDER, scene_id, 'invalid_frames.txt'), 'r') as inv_file:
             invalid_frames.append(inv_file.read().splitlines())
 
-    num_train = 000
+    num_train = 45000
     num_test = 2000
 
     idx = 0
@@ -1402,7 +1402,7 @@ def main():
     soft, hard = resource.getrlimit(resource.RLIMIT_AS)
     resource.setrlimit(resource.RLIMIT_AS, (48 * 1024 * 1024 * 1024, hard))
 
-    scene_ids = fnmatch.filter(os.listdir(ROOT_FOLDER), 'scene02??_00')
+    scene_ids = fnmatch.filter(os.listdir(ROOT_FOLDER), 'scene0[01]??_00')
     scene_ids = sorted(scene_ids)
     # scene_ids = ['scene0400_00']
     print(scene_ids)
@@ -1457,13 +1457,13 @@ def main():
             print('computing depth and normals')
             compute_depth_and_normals(scene_id)
 
-        print('removing invalid frames')
-        remove_invalid(scene_id)
+        # print('removing invalid frames')
+        # remove_invalid(scene_id)
 
         continue
 
-    # print('selecting splits')
-    # select_splits(scene_ids)
+    print('selecting splits')
+    select_splits(scene_ids)
 
 
 if __name__=='__main__':

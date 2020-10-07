@@ -624,12 +624,14 @@ def evaluate(options):
                 for c in range(len(input_pair)):
                     evaluateBatchDetection(options, config, input_pair[c], detection_pair[c], statistics=statistics, printInfo=options.debug, evaluate_plane=options.dataset == '')
                     continue
-            else:
-                for c in range(len(detection_pair)):
-                    np.save(options.test_dir + '/' + ('%04d' % (sampleIndex % 5000)) + '_plane_parameters_' + str(c) + '.npy', detection_pair[c]['detection'][:, 6:9])
-                    np.save(options.test_dir + '/' + ('%04d' % (sampleIndex % 5000)) + '_plane_masks_' + str(c) + '.npy', detection_pair[c]['masks'][:, 80:560])
-                    continue
-                pass
+            # else:
+            for c in range(len(detection_pair)):
+                np.save(options.test_dir + '/' + ('%04d' % (sampleIndex % 5000)) + '_plane_parameters_' + str(c) + '.npy',
+                        detection_pair[c]['detection'][:, 6:9].cpu())
+                np.save(options.test_dir + '/' + ('%04d' % (sampleIndex % 5000)) + '_plane_masks_' + str(c) + '.npy',
+                        detection_pair[c]['masks'][:, 80:560].cpu())
+                continue
+            pass
                             
             if sampleIndex < 30 or options.debug or options.dataset != '':
                 visualizeBatchPair(options, config, input_pair, detection_pair, indexOffset=sampleIndex % 5000, suffix='_' + name + options.modelType, write_ply=options.testingIndex >= 0, write_new_view=options.testingIndex >= 0 and 'occlusion' in options.suffix)

@@ -4,6 +4,7 @@ Licensed under the CC BY-NC-SA 4.0 license
 (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode).
 """
 
+import cv2
 import torch
 from torch import optim
 from torch.utils.data import DataLoader
@@ -12,7 +13,6 @@ from torch.utils.tensorboard import SummaryWriter
 import os
 from tqdm import tqdm
 import numpy as np
-import cv2
 import sys
 import shutil
 
@@ -32,6 +32,8 @@ from config import PlaneConfig
 
 
 def train(options):
+    cv2.setNumThreads(0)
+
     if not os.path.exists(options.checkpoint_dir):
         os.system("mkdir -p %s"%options.checkpoint_dir)
         pass
@@ -46,14 +48,15 @@ def train(options):
         shutil.rmtree(summary_dir)
     writer = SummaryWriter(summary_dir)
 
-    dataset = ScenenetRgbdDataset(options, config, split='train', random=False, writer=writer)
+    # dataset = ScenenetRgbdDataset(options, config, split='train', random=False, writer=writer)
+    dataset = ScenenetRgbdDataset(options, config, split='train', random=False)
     # dataset_test = ScenenetRgbdDataset(options, config, split='test', random=False, writer=writer)
     # dataset = PlaneDataset(options, config, split='train', random=False)
     # dataset_test = PlaneDataset(options, config, split='test', random=False)
 
     print('the number of images', len(dataset))
 
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=2)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
     # dataloader_test = DataLoader(dataset_test, batch_size=1, shuffle=True)
 
     model = MaskRCNN(config)

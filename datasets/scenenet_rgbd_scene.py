@@ -4,9 +4,9 @@ Licensed under the CC BY-NC-SA 4.0 license
 (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode).
 """
 
+import cv2
 import numpy as np
 import glob
-import cv2
 import os
 import re
 
@@ -137,6 +137,8 @@ class ScenenetRgbdScene():
         return len(self.frame_nums)
 
     def __getitem__(self, frame_num_cam_idx):
+        cv2.setNumThreads(0)
+
         frame_num = frame_num_cam_idx[0]
         cam_idx = frame_num_cam_idx[1]
 
@@ -208,6 +210,7 @@ class ScenenetRgbdScene():
 
         image = cv2.resize(image, (depth.shape[1], depth.shape[0]))
 
+        planes = []
         if len(planes_global) > 0:
             planes = self.transformPlanes(extrinsics, planes_global)
             segmentation, plane_depths = cleanSegmentation(image, planes, plane_info, segmentation, depth, self.camera,
@@ -243,7 +246,7 @@ class ScenenetRgbdScene():
                     print(self.scene_id + ' ' + frame_num + ' ' + str(cam_idx))
                     # print(planes)
                     # print(planes_global)
-                    self.writer.flush()
+                    # self.writer.flush()
                     pass
 
                 print('depth error', depth_error)
