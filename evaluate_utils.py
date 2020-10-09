@@ -117,6 +117,36 @@ def evaluatePlanesTensor(input_dict, detection_dict, printInfo=False, use_gpu=Tr
         pass
     return APs + plane_curves[0] + pixel_curves[0]
 
+
+def evaluatePlaneDist(config, input_dict, detection_dict, printInfo=False):
+    masks, planes, depth_pred, depth_gt = detection_dict['masks'], detection_dict['detection'][:, 6:9], detection_dict['depth'], input_dict['depth']
+    masks_cropped = masks[:, 80:560]
+    ranges = config.getRanges(input_dict['camera']).transpose(1, 2).transpose(0, 1)
+    plane_parameters_array = []
+
+    XYZ = ranges * depth_gt[:, 80:560]
+    dists = None
+    for m in range(masks.shape[0]):
+        # gt points belonging to the plane
+        XYZ_plane = XYZ[:, masks[m, 80:560, :] > 0]
+        # relative to a point on the plane
+        XYZ_plane = XYZ_plane - planes[m, :, None]
+        normal = planes[m] / planes[m].norm()
+        # dot product with normal
+        cur_dists = (XYZ_plane * normal[:, None]).sum(dim=0).abs()
+        if dists is None:
+            dists = cur_dists
+        else:
+            dists = torch.cat([dists, cur_dists])
+
+    # RMSE
+    statistics = [dists.square().mean().sqrt()]
+    if printInfo:
+        print('plane dist statistics', statistics)
+        pass
+    return statistics
+
+
 def evaluatePlaneDepth(config, input_dict, detection_dict, printInfo=False):
     masks_gt, depth_pred, depth_gt = input_dict['masks'], detection_dict['depth'], input_dict['depth']
     masks_cropped = masks_gt[:, 80:560]
@@ -213,7 +243,8 @@ def evaluateBatchDetection(options, config, input_dict, detection_dict, statisti
     depth_pred = depth_pred[:, 80:560]        
 
     nyu_mask = torch.zeros((1, 640, 640)).cuda()
-    nyu_mask[:, 80 + 44:80 + 471, 40:601] = 1
+    # nyu_mask[:, 80 + 44:80 + 471, 40:601] = 1
+    nyu_mask[:, 80:560, :] = 1
     nyu_mask = nyu_mask > -0.5
     for c, plane_mask in enumerate([nyu_mask]):
         valid_mask_depth = valid_mask * plane_mask
@@ -261,6 +292,9 @@ def evaluateBatchDetection(options, config, input_dict, detection_dict, statisti
         plane_statistics = evaluatePlanesTensor(input_dict, detection_dict, printInfo=printInfo)
         statistics[3].append([plane_statistics[c] for c in [1, 2, 3]])
         pass
+
+    statistics[4].append(evaluatePlaneDist(config, input_dict, detection_dict, True))
+
     return
 
 def printStatisticsDetection(options, statistics):
@@ -277,6 +311,9 @@ def printStatisticsDetection(options, statistics):
 
         if len(statistics[3]) > 0:
             values += np.array(statistics[3]).mean(0).tolist()
+            pass
+        if len(statistics[4]) > 0:
+            values += np.array(statistics[4]).mean(0).tolist()
             pass
         name = options.keyname + '_' + options.anchorType
         if options.suffix != '':
