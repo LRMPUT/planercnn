@@ -1757,20 +1757,20 @@ class MaskRCNN(nn.Module):
             self.anchors = self.anchors.cuda()
 
         ## RPN
-        self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256 + config.MAXDISP)
-        # self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256)
+        # self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256 + config.MAXDISP)
+        self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256)
 
         ## Coordinate feature
         self.coordinates = nn.Conv2d(3, 64, kernel_size=1, stride=1)
         
         ## FPN Classifier
         self.debug = False
-        self.classifier = Classifier(256 + config.MAXDISP, config.POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES, config.NUM_PARAMETERS, debug=self.debug)
-        # self.classifier = Classifier(256, config.POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES, config.NUM_PARAMETERS, debug=self.debug)
+        # self.classifier = Classifier(256 + config.MAXDISP, config.POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES, config.NUM_PARAMETERS, debug=self.debug)
+        self.classifier = Classifier(256, config.POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES, config.NUM_PARAMETERS, debug=self.debug)
 
         ## FPN Mask
-        self.mask = Mask(config, 256 + config.MAXDISP, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
-        # self.mask = Mask(config, 256, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
+        # self.mask = Mask(config, 256 + config.MAXDISP, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
+        self.mask = Mask(config, 256, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
 
         if self.config.PREDICT_DEPTH:
             if self.config.PREDICT_STEREO:
@@ -1780,11 +1780,11 @@ class MaskRCNN(nn.Module):
                                          256)
             else:
                 if self.config.PREDICT_BOUNDARY:
-                    self.depth = Depth(256 + config.MAXDISP, num_output_channels=3)
-                    # self.depth = Depth(256, num_output_channels=3)
+                    # self.depth = Depth(256 + config.MAXDISP, num_output_channels=3)
+                    self.depth = Depth(256, num_output_channels=3)
                 else:
-                    self.depth = Depth(256 + config.MAXDISP, num_output_channels=1)
-                    # self.depth = Depth(256, num_output_channels=1)
+                    # self.depth = Depth(256 + config.MAXDISP, num_output_channels=1)
+                    self.depth = Depth(256, num_output_channels=1)
                     pass
                 pass
 
@@ -2003,62 +2003,62 @@ class MaskRCNN(nn.Module):
         rpn_feature_maps = [p2_out, p3_out, p4_out, p5_out, p6_out]
         mrcnn_feature_maps = [p2_out, p3_out, p4_out, p5_out]
 
-        # TODO Checking disp features
-        gt_depth = input[7].unsqueeze(1)
-        camera = input[6]
-        fx = camera[0]
-        gt_disp = fx * torch.tensor(self.config.BASELINE, dtype=torch.float, requires_grad=False).cuda() / \
-                        torch.clamp(gt_depth, min=1.0e-4)
-        if writer is not None:
-            writer.add_image('disp_feat/image',
-                             torch.clamp(unmold_image_torch(molded_images, self.config), min=0, max=255).squeeze(0),
-                             dataformats='CHW')
-        for stage in range(2, 7):
-            h = rpn_feature_maps[stage-2].shape[2]
-            w = rpn_feature_maps[stage-2].shape[3]
-
-            cur_disp = torch.nn.functional.interpolate(gt_disp,
-                                                       size=(h, w),
-                                                       mode='bilinear').view(-1, h, w, 1)
-            disp_vol = torch.zeros((1,
-                                    h,
-                                    w,
-                                    self.config.MAXDISP),
-                                   dtype=torch.float, requires_grad=False).cuda()
-
-            cur_disp_low = cur_disp.floor().to(torch.long)
-            cur_disp_high = cur_disp.ceil().to(torch.long)
-            mask = cur_disp_high < self.config.MAXDISP
-
-            # urange = torch.arange(w, dtype=torch.long, requires_grad=False).cuda().reshape(1, -1).repeat(h, 1)
-            # vrange = torch.arange(h, dtype=torch.long, requires_grad=False).cuda().reshape(-1, 1).repeat(1, w)
-            # ind = torch.stack([torch.zeros_like(cur_disp_low).cuda(),
-            #                    cur_disp_low,
-            #                    vrange.expand_as(cur_disp_low),
-            #                    urange.expand_as(cur_disp_low)],
-            #                   dim=-1)
-            mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, requires_grad=False).cuda()
-            mask_vol.scatter_(-1, cur_disp_low.clamp(max=self.config.MAXDISP - 1), mask)
-            disp_vol[mask_vol] = 1.0 - (cur_disp[mask] - cur_disp_low[mask])
-
-            mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, requires_grad=False).cuda()
-            mask_vol.scatter_(-1, cur_disp_high.clamp(max=self.config.MAXDISP - 1), mask)
-            disp_vol[mask_vol] = 1.0 - (cur_disp_high[mask] - cur_disp[mask])
-
-            # move disp dimension (3) to 1
-            disp_vol = disp_vol.transpose(0, 3).squeeze(-1).unsqueeze(0)
-
-            pred = disparityregression(self.config.MAXDISP)(disp_vol)
-            if writer is not None:
-                min_d = pred.min()
-                max_d = pred.max()
-                writer.add_image('disp_feat/disp_est', (pred.squeeze(0) - min_d) / (max_d - min_d), dataformats='HW')
-                writer.add_image('disp_feat/disp_gt', (cur_disp.squeeze(0).squeeze(-1) - min_d) / (max_d - min_d), dataformats='HW')
-                writer.flush()
-
-            rpn_feature_maps[stage-2] = torch.cat([rpn_feature_maps[stage-2], disp_vol], dim=1)
-            if stage < 6:
-                mrcnn_feature_maps[stage-2] = torch.cat([mrcnn_feature_maps[stage-2], disp_vol], dim=1)
+        # # TODO Checking disp features
+        # gt_depth = input[7].unsqueeze(1)
+        # camera = input[6]
+        # fx = camera[0]
+        # gt_disp = fx * torch.tensor(self.config.BASELINE, dtype=torch.float, requires_grad=False).cuda() / \
+        #                 torch.clamp(gt_depth, min=1.0e-4)
+        # if writer is not None:
+        #     writer.add_image('disp_feat/image',
+        #                      torch.clamp(unmold_image_torch(molded_images, self.config), min=0, max=255).squeeze(0),
+        #                      dataformats='CHW')
+        # for stage in range(2, 7):
+        #     h = rpn_feature_maps[stage-2].shape[2]
+        #     w = rpn_feature_maps[stage-2].shape[3]
+        #
+        #     cur_disp = torch.nn.functional.interpolate(gt_disp,
+        #                                                size=(h, w),
+        #                                                mode='bilinear').view(-1, h, w, 1)
+        #     disp_vol = torch.zeros((1,
+        #                             h,
+        #                             w,
+        #                             self.config.MAXDISP),
+        #                            dtype=torch.float, requires_grad=False).cuda()
+        #
+        #     cur_disp_low = cur_disp.floor().to(torch.long)
+        #     cur_disp_high = cur_disp.ceil().to(torch.long)
+        #     mask = cur_disp_high < self.config.MAXDISP
+        #
+        #     # urange = torch.arange(w, dtype=torch.long, requires_grad=False).cuda().reshape(1, -1).repeat(h, 1)
+        #     # vrange = torch.arange(h, dtype=torch.long, requires_grad=False).cuda().reshape(-1, 1).repeat(1, w)
+        #     # ind = torch.stack([torch.zeros_like(cur_disp_low).cuda(),
+        #     #                    cur_disp_low,
+        #     #                    vrange.expand_as(cur_disp_low),
+        #     #                    urange.expand_as(cur_disp_low)],
+        #     #                   dim=-1)
+        #     mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, requires_grad=False).cuda()
+        #     mask_vol.scatter_(-1, cur_disp_low.clamp(max=self.config.MAXDISP - 1), mask)
+        #     disp_vol[mask_vol] = 1.0 - (cur_disp[mask] - cur_disp_low[mask])
+        #
+        #     mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, requires_grad=False).cuda()
+        #     mask_vol.scatter_(-1, cur_disp_high.clamp(max=self.config.MAXDISP - 1), mask)
+        #     disp_vol[mask_vol] = 1.0 - (cur_disp_high[mask] - cur_disp[mask])
+        #
+        #     # move disp dimension (3) to 1
+        #     disp_vol = disp_vol.transpose(0, 3).squeeze(-1).unsqueeze(0)
+        #
+        #     pred = disparityregression(self.config.MAXDISP)(disp_vol)
+        #     if writer is not None:
+        #         min_d = pred.min()
+        #         max_d = pred.max()
+        #         writer.add_image('disp_feat/disp_est', (pred.squeeze(0) - min_d) / (max_d - min_d), dataformats='HW')
+        #         writer.add_image('disp_feat/disp_gt', (cur_disp.squeeze(0).squeeze(-1) - min_d) / (max_d - min_d), dataformats='HW')
+        #         writer.flush()
+        #
+        #     rpn_feature_maps[stage-2] = torch.cat([rpn_feature_maps[stage-2], disp_vol], dim=1)
+        #     if stage < 6:
+        #         mrcnn_feature_maps[stage-2] = torch.cat([mrcnn_feature_maps[stage-2], disp_vol], dim=1)
 
         feature_maps = [feature_map for index, feature_map in enumerate(rpn_feature_maps[::-1])]
         if self.config.PREDICT_DEPTH:

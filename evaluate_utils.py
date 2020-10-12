@@ -119,10 +119,12 @@ def evaluatePlanesTensor(input_dict, detection_dict, printInfo=False, use_gpu=Tr
 
 
 def evaluatePlaneDist(config, input_dict, detection_dict, printInfo=False):
-    masks, planes, depth_pred, depth_gt = detection_dict['masks'], detection_dict['detection'][:, 6:9], detection_dict['depth'], input_dict['depth']
+    masks, planes, depth_gt = detection_dict['masks'], detection_dict['detection'][:, 6:9], input_dict['depth']
     masks_cropped = masks[:, 80:560]
     ranges = config.getRanges(input_dict['camera']).transpose(1, 2).transpose(0, 1)
-    plane_parameters_array = []
+    bin_width = 50
+    dists_hist = torch.zeros(masks.shape[2] // bin_width + 1, dtype=torch.float, device=masks.device, requires_grad=False)
+    dists_cnt = torch.zeros(masks.shape[2] // bin_width + 1, dtype=torch.float, device=masks.device, requires_grad=False)
 
     XYZ = ranges * depth_gt[:, 80:560]
     dists = None
@@ -139,12 +141,58 @@ def evaluatePlaneDist(config, input_dict, detection_dict, printInfo=False):
         else:
             dists = torch.cat([dists, cur_dists])
 
+        area = XYZ_plane.shape[1]
+        bin_idx = int(np.sqrt(area) // bin_width)
+        dists_hist[bin_idx] += cur_dists.square().mean().sqrt()
+        dists_cnt[bin_idx] += 1.0
+
+    statistics = []
     # RMSE
-    statistics = [dists.square().mean().sqrt()]
+    statistics.extend([float(dists.square().mean().sqrt())])
+    # statistics.extend((dists_hist / dists_cnt).tolist())
     if printInfo:
         print('plane dist statistics', statistics)
         pass
-    return statistics
+    return [statistics, dists_hist.tolist(), dists_cnt.tolist()]
+
+
+def evaluatePlaneNorm(config, input_dict, detection_dict, printInfo=False):
+    masks, planes, depth_gt = detection_dict['masks'], detection_dict['detection'][:, 6:9], input_dict['depth']
+    masks_cropped = masks[:, 80:560]
+    ranges = config.getRanges(input_dict['camera']).transpose(1, 2).transpose(0, 1)
+    bin_width = 50
+    dists_hist = torch.zeros(masks.shape[2] // bin_width + 1, dtype=torch.float, device=masks.device, requires_grad=False)
+    dists_cnt = torch.zeros(masks.shape[2] // bin_width + 1, dtype=torch.float, device=masks.device, requires_grad=False)
+
+    XYZ = ranges * depth_gt[:, 80:560]
+    dists = None
+    for m in range(masks.shape[0]):
+        # gt points belonging to the plane
+        XYZ_plane = XYZ[:, masks[m, 80:560, :] > 0]
+        plane_gt = fit_plane_torch(XYZ_plane.transpose(0, 1))
+        normal_gt = plane_gt / plane_gt.norm()
+        normal = planes[m] / planes[m].norm()
+        # dot product between normals -> angle between normals
+        cur_dist = torch.acos(normal.dot(normal_gt)) * 180.0 / np.pi
+        if dists is None:
+            # add dummy dimension
+            dists = cur_dist[None]
+        else:
+            dists = torch.cat([dists, cur_dist[None]])
+
+        area = XYZ_plane.shape[1]
+        bin_idx = int(np.sqrt(area) // bin_width)
+        dists_hist[bin_idx] += cur_dist
+        dists_cnt[bin_idx] += 1.0
+
+    statistics = []
+    statistics.extend([float(dists.mean())])
+    # statistics.extend((dists_hist / dists_cnt).tolist())
+
+    if printInfo:
+        print('plane norm statistics', statistics)
+        pass
+    return [statistics, dists_hist.tolist(), dists_cnt.tolist()]
 
 
 def evaluatePlaneDepth(config, input_dict, detection_dict, printInfo=False):
@@ -293,7 +341,15 @@ def evaluateBatchDetection(options, config, input_dict, detection_dict, statisti
         statistics[3].append([plane_statistics[c] for c in [1, 2, 3]])
         pass
 
-    statistics[4].append(evaluatePlaneDist(config, input_dict, detection_dict, True))
+    plane_dist_stat, plane_dist_hist, plane_dist_cnt = evaluatePlaneDist(config, input_dict, detection_dict)
+    statistics[4].append(plane_dist_stat)
+    statistics[5].append(plane_dist_hist)
+    statistics[6].append(plane_dist_cnt)
+
+    plane_norm_stat, plane_norm_hist, plane_norm_cnt = evaluatePlaneNorm(config, input_dict, detection_dict)
+    statistics[7].append(plane_norm_stat)
+    statistics[8].append(plane_norm_hist)
+    statistics[9].append(plane_norm_cnt)
 
     return
 
@@ -315,6 +371,15 @@ def printStatisticsDetection(options, statistics):
         if len(statistics[4]) > 0:
             values += np.array(statistics[4]).mean(0).tolist()
             pass
+        if len(statistics[5]) > 0 and len(statistics[6]) > 0:
+            values += (np.array(statistics[5]).sum(0) / np.maximum(1.0, np.array(statistics[6]).sum(0))).tolist()
+            pass
+        if len(statistics[7]) > 0:
+            values += np.array(statistics[7]).mean(0).tolist()
+            pass
+        if len(statistics[8]) > 0 and len(statistics[9]) > 0:
+            values += (np.array(statistics[8]).sum(0) / np.maximum(1.0, np.array(statistics[9]).sum(0))).tolist()
+            pass
         name = options.keyname + '_' + options.anchorType
         if options.suffix != '':
             name += '_' + options.suffix
@@ -331,7 +396,7 @@ def printStatisticsDetection(options, statistics):
         
         line = options.dataset + ': ' + name + ' statistics:'
         for v in values:
-            line += ' %0.3f'%v
+            line += ' %0.3f' % v
             continue
         print('\nstatistics', line)
         line += '\n'

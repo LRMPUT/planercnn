@@ -589,7 +589,7 @@ def evaluate(options):
 
     all_statistics = []
     for name, detector in detectors:
-        statistics = [[], [], [], [], []]
+        statistics = [[], [], [], [], [], [], [], [], [], []]
         for sampleIndex, sample in enumerate(data_iterator):
             if options.testingIndex >= 0 and sampleIndex != options.testingIndex:
                 if sampleIndex > options.testingIndex:

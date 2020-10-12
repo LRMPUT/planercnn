@@ -687,9 +687,9 @@ def fitPlane(points):
 
 def fit_plane_torch(points):
     if points.shape[0] == points.shape[1]:
-        return torch.solve(torch.ones(points.shape[0], 1), points)[0]
+        return torch.solve(torch.ones(points.shape[0], 1, device=points.device), points)[0]
     else:
-        return torch.lstsq(torch.ones(points.shape[0], 1), points)[0][0:3, 0]
+        return torch.lstsq(torch.ones(points.shape[0], 1, device=points.device), points)[0][0:3, 0]
     return
 
 
