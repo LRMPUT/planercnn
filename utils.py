@@ -1469,6 +1469,35 @@ def calc_iou(box1, box2):
     return iou
 
 
+def calc_iou_batch(boxes):
+    n = boxes.shape[0]
+    x1 = boxes[:, 1]
+    x2 = boxes[:, 3]
+    y1 = boxes[:, 0]
+    y2 = boxes[:, 2]
+
+    x1_cols = x1[:, None].repeat(1, n)
+    x1_rows = x1[None, :].repeat(n, 1)
+    x2_cols = x2[:, None].repeat(1, n)
+    x2_rows = x2[None, :].repeat(n, 1)
+    y1_cols = y1[:, None].repeat(1, n)
+    y1_rows = y1[None, :].repeat(n, 1)
+    y2_cols = y2[:, None].repeat(1, n)
+    y2_rows = y2[None, :].repeat(n, 1)
+
+    x1_i = torch.max(x1_cols, x1_rows)
+    x2_i = torch.min(x2_cols, x2_rows)
+    y1_i = torch.max(y1_cols, y1_rows)
+    y2_i = torch.min(y2_cols, y2_rows)
+
+    area_i = torch.clamp(y2_i - y1_i, min=0.0) * torch.clamp(x2_i - x1_i, min=0.0)
+    area = (y2 - y1) * (x2 - x1)
+
+    iou = area_i / area
+
+    return iou
+
+
 # def remove_nms(anchors, scores, planes, iou_thresh=0.3, score_thresh=0.9):
 #     score_mask = scores > score_thresh
 #     score_idxs = np.where(score_mask)[0]

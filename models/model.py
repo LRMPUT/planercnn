@@ -2629,18 +2629,34 @@ class AnchorScores(pl.LightningModule):
             positive_matches = []
             negative_matches = []
 
+            iou = calc_iou_batch(anchors_nms)
+
             merge_thresh = 0.4
-            for i in range(anchors_nms.shape[0]):
-                for j in range(i + 1, anchors_nms.shape[0]):
-                    iou1 = calc_iou(anchors_nms[i], anchors_nms[j])
-                    iou2 = calc_iou(anchors_nms[j], anchors_nms[i])
-                    norm_dot = plane_to_plane_dot(planes_nms[i], planes_nms[j])
+            overlap_idxs = torch.where(torch.max(iou, iou.transpose(0, 1)) > merge_thresh)
+            overlap_idxs = (overlap_idxs[0].cpu().numpy(), overlap_idxs[1].cpu().numpy())
+            for i in range(overlap_idxs[0].shape[0]):
+                if overlap_idxs[0][i] != overlap_idxs[1][i]:
+                    norm_dot = plane_to_plane_dot(planes_nms[overlap_idxs[0][i]],
+                                                  planes_nms[overlap_idxs[1][i]])
                     # dist = plane_to_plane_dist(planes_nms[i], planes_nms[j])
-                    if iou1 > merge_thresh or iou2 > merge_thresh:
-                        if norm_dot > np.cos(10.0 * np.pi / 180.0):
-                            positive_matches.append((i, j))
-                        else:
-                            negative_matches.append((i, j))
+                    if norm_dot > np.cos(10.0 * np.pi / 180.0):
+                        positive_matches.append((overlap_idxs[0][i], overlap_idxs[1][i]))
+                    else:
+                        negative_matches.append((overlap_idxs[0][i], overlap_idxs[1][i]))
+
+            # for i in range(anchors_nms.shape[0]):
+            #     for j in range(i + 1, anchors_nms.shape[0]):
+            #         iou1 = calc_iou(anchors_nms[i], anchors_nms[j])
+            #         print('iou1 ', iou1, ' iou batch ', iou[i, j])
+            #         iou2 = calc_iou(anchors_nms[j], anchors_nms[i])
+            #         print('iou2 ', iou2, ' iou batch ', iou[j, i])
+            #         norm_dot = plane_to_plane_dot(planes_nms[i], planes_nms[j])
+            #         # dist = plane_to_plane_dist(planes_nms[i], planes_nms[j])
+            #         if iou1 > merge_thresh or iou2 > merge_thresh:
+            #             if norm_dot > np.cos(10.0 * np.pi / 180.0):
+            #                 positive_matches.append((i, j))
+            #             else:
+            #                 negative_matches.append((i, j))
 
             neg_ratio = 5
             sel_positive_matches = []
