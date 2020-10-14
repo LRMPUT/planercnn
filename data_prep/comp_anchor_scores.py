@@ -8,7 +8,7 @@ import sys
 import os
 import torch
 import torchvision
-# import nms
+import nms
 import comp_score_py
 from joblib import Parallel, delayed
 from disjoint_set import DisjointSet

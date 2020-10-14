@@ -353,6 +353,16 @@ def evaluateBatchDetection(options, config, input_dict, detection_dict, statisti
 
     return
 
+
+def add_values(line, values):
+    for v in values:
+        line += ' %0.3f' % v
+        continue
+    line += '\n'
+
+    return line
+
+
 def printStatisticsDetection(options, statistics):
     if not os.path.exists('logs'):
         os.system("mkdir -p logs")
@@ -363,23 +373,6 @@ def printStatisticsDetection(options, statistics):
         open_type = 'a'
         pass
     with open('logs/global.txt', open_type) as f:
-        values = np.array(statistics[0]).mean(0).tolist() + np.array(statistics[1]).mean(0).tolist() + np.array(statistics[2]).mean(0).tolist()
-
-        if len(statistics[3]) > 0:
-            values += np.array(statistics[3]).mean(0).tolist()
-            pass
-        if len(statistics[4]) > 0:
-            values += np.array(statistics[4]).mean(0).tolist()
-            pass
-        if len(statistics[5]) > 0 and len(statistics[6]) > 0:
-            values += (np.array(statistics[5]).sum(0) / np.maximum(1.0, np.array(statistics[6]).sum(0))).tolist()
-            pass
-        if len(statistics[7]) > 0:
-            values += np.array(statistics[7]).mean(0).tolist()
-            pass
-        if len(statistics[8]) > 0 and len(statistics[9]) > 0:
-            values += (np.array(statistics[8]).sum(0) / np.maximum(1.0, np.array(statistics[9]).sum(0))).tolist()
-            pass
         name = options.keyname + '_' + options.anchorType
         if options.suffix != '':
             name += '_' + options.suffix
@@ -393,11 +386,36 @@ def printStatisticsDetection(options, statistics):
         if options.modelType != '':
             name += '_' + options.modelType
             pass
-        
-        line = options.dataset + ': ' + name + ' statistics:'
-        for v in values:
-            line += ' %0.3f' % v
-            continue
+        line = options.dataset + ': ' + name + ' statistics:\n'
+
+        values = np.array(statistics[0]).mean(0).tolist() + np.array(statistics[1]).mean(0).tolist() + np.array(statistics[2]).mean(0).tolist()
+        line = add_values(line, values)
+
+        if len(statistics[3]) > 0:
+            values = np.array(statistics[3]).mean(0).tolist()
+            line = add_values(line, values)
+            pass
+        if len(statistics[4]) > 0:
+            values = np.array(statistics[4]).mean(0).tolist()
+            line = add_values(line, values)
+            pass
+        if len(statistics[5]) > 0 and len(statistics[6]) > 0:
+            values = (np.array(statistics[5]).sum(0) / np.maximum(1.0, np.array(statistics[6]).sum(0))).tolist()
+            line = add_values(line, values)
+            values = np.array(statistics[6]).sum(0).tolist()
+            line = add_values(line, values)
+            pass
+        if len(statistics[7]) > 0:
+            values = np.array(statistics[7]).mean(0).tolist()
+            line = add_values(line, values)
+            pass
+        if len(statistics[8]) > 0 and len(statistics[9]) > 0:
+            values = (np.array(statistics[8]).sum(0) / np.maximum(1.0, np.array(statistics[9]).sum(0))).tolist()
+            line = add_values(line, values)
+            values = np.array(statistics[9]).sum(0).tolist()
+            line = add_values(line, values)
+            pass
+
         print('\nstatistics', line)
         line += '\n'
         f.write(line)

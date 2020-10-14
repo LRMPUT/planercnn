@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import DataLoader
 import pytorch_lightning as pl
+from pytorch_lightning.profiler import AdvancedProfiler
 
 import os
 from tqdm import tqdm
@@ -36,10 +37,14 @@ def train(options):
     test_loader = DataLoader(dataset_test, batch_size=1, shuffle=False, num_workers=2)
 
     model = AnchorScores(options, config)
-    # trainer = pl.Trainer(gpus=1, limit_val_batches=10, val_check_interval=500)
-    trainer = pl.Trainer(gpus=1, limit_val_batches=10, val_check_interval=500,
-                         resume_from_checkpoint='lightning_logs/version_3/checkpoints/epoch=6.ckpt')
+    profiler = AdvancedProfiler()
+    # limit_val_batches=10, val_check_interval=0,
+    trainer = pl.Trainer(gpus=1, limit_train_batches=10, max_epochs=1, profiler=profiler)
+    # trainer = pl.Trainer(gpus=1, limit_val_batches=10, val_check_interval=500,
+    #                      resume_from_checkpoint='lightning_logs/version_3/checkpoints/epoch=6.ckpt')
     trainer.fit(model, train_loader, test_loader)
+
+    print(profiler.summary())
 
 
 if __name__ == '__main__':
