@@ -118,7 +118,7 @@ class Config(object):
         pass
 
     # Pooled ROIs
-    POOL_SIZE = 7
+    POOL_SIZE = 14
     MASK_POOL_SIZE = 14
     MASK_SHAPE = [28, 28]
     FINAL_MASK_SHAPE = [224, 224]  # (height, width) of the mini-mask

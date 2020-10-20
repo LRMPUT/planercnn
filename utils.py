@@ -1435,7 +1435,7 @@ def roi_align(input, boxes, output_size):
         # convert to unnormalized coordinates in [x1, y1, x2, y2] format
         box_pt = torch.cat([x1 * w, y1 * h, x2 * w, y2 * h], dim=1)
         boxes_pt.append(box_pt)
-    return torchvision.ops.roi_align(input, boxes_pt, output_size)
+    return torchvision.ops.roi_align(input, boxes_pt, output_size, aligned=True)
 
 
 def plane_to_plane_dist(plane1, plane2):

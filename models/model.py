@@ -1107,8 +1107,11 @@ class Classifier(nn.Module):
         self.image_shape = image_shape
         self.num_classes = num_classes
         self.num_parameters = num_parameters
-        self.conv1 = nn.Conv2d(self.depth + 64, 1024, kernel_size=self.pool_size, stride=1)
-        self.bn1 = nn.BatchNorm2d(1024, eps=0.001, momentum=0.01)
+        self.padding = SamePad2d(kernel_size=3, stride=1)
+        self.conv1 = nn.Conv2d(self.depth + 64, self.depth + 64, kernel_size=3, stride=1)
+        self.bn1 = nn.BatchNorm2d(self.depth + 64, eps=0.001, momentum=0.01)
+        self.conv1b = nn.Conv2d(self.depth + 64, 1024, kernel_size=self.pool_size, stride=1)
+        self.bn1b = nn.BatchNorm2d(1024, eps=0.001, momentum=0.01)
         self.conv2 = nn.Conv2d(1024, 1024, kernel_size=1, stride=1)
         self.bn2 = nn.BatchNorm2d(1024, eps=0.001, momentum=0.01)
         self.relu = nn.ReLU(inplace=True)
@@ -1129,8 +1132,10 @@ class Classifier(nn.Module):
         x = pyramid_roi_align([rois] + x, self.pool_size, self.image_shape)
         ranges = coordinates_roi([rois] + [ranges, ], self.pool_size, self.image_shape)
         roi_features = torch.cat([x, ranges], dim=1)
-        x = self.conv1(roi_features)
+        x = self.conv1(self.padding(roi_features))
         x = self.bn1(x)
+        x = self.conv1b(x)
+        x = self.bn1b(x)
         x = self.relu(x)
         x = self.conv2(x)
         x = self.bn2(x)
@@ -1209,6 +1214,17 @@ class Mask(nn.Module):
         return x, roi_features
 
 
+class disparityregression(nn.Module):
+    def __init__(self, maxdisp):
+        super(disparityregression, self).__init__()
+        self.disp = Variable(torch.Tensor(np.reshape(np.array(range(maxdisp)),[1,maxdisp,1,1])).cuda(), requires_grad=False)
+
+    def forward(self, x):
+        disp = self.disp.repeat(x.size()[0],1,x.size()[2],x.size()[3])
+        out = torch.sum(x*disp,1)
+        return out
+
+
 class Depth(nn.Module):
     def __init__(self, num_input_feats, num_output_channels=1):
         super(Depth, self).__init__()
@@ -1218,8 +1234,18 @@ class Depth(nn.Module):
             nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
             nn.ReLU(inplace=True)
         )
+        self.conv1b = nn.Sequential(
+                nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
+                nn.ReLU(inplace=True)
+        )
         self.conv2 = nn.Sequential(
             nn.Conv2d(num_input_feats, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
+            nn.ReLU(inplace=True)
+        )
+        self.conv2b = nn.Sequential(
+            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
             nn.ReLU(inplace=True)
         )
@@ -1228,13 +1254,28 @@ class Depth(nn.Module):
             nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
             nn.ReLU(inplace=True)
         )
+        self.conv3b = nn.Sequential(
+            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
+            nn.ReLU(inplace=True)
+        )
         self.conv4 = nn.Sequential(
             nn.Conv2d(num_input_feats, 128, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
             nn.ReLU(inplace=True)
         )
+        self.conv4b = nn.Sequential(
+            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
+            nn.ReLU(inplace=True)
+        )
         self.conv5 = nn.Sequential(
             nn.Conv2d(num_input_feats, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
+            nn.ReLU(inplace=True)
+        )
+        self.conv5b = nn.Sequential(
+            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
             nn.ReLU(inplace=True)
         )
@@ -1271,25 +1312,36 @@ class Depth(nn.Module):
         )
         
         self.depth_pred = nn.Conv2d(64, num_output_channels, kernel_size=3, stride=1, padding=1)
+        self.conv_pred = nn.Sequential(
+                nn.Conv2d(num_output_channels, num_output_channels, kernel_size=3, stride=1, padding=1)
+        )
 
-        self.crop = True
+        self.crop = False
         return
     
     def forward(self, feature_maps):
-        if self.crop:
-            padding = 5
-            for c in range(2, 5):
-                feature_maps[c] = feature_maps[c][:, :, padding * pow(2, c - 2):-padding * pow(2, c - 2)]
-                continue
-            pass
-        x = self.deconv1(self.conv1(feature_maps[0]))
-        x = self.deconv2(torch.cat([self.conv2(feature_maps[1]), x], dim=1))
-        if self.crop:
-            x = x[:, :, 5:35]
-        x = self.deconv3(torch.cat([self.conv3(feature_maps[2]), x], dim=1))
-        x = self.deconv4(torch.cat([self.conv4(feature_maps[3]), x], dim=1))
-        x = self.deconv5(torch.cat([self.conv5(feature_maps[4]), x], dim=1))
-        x = self.depth_pred(x)
+        # testing only disparity features
+        # for c in range(0, 5):
+        #     feature_maps[c] = feature_maps[c][:, 256:448]
+        # if self.crop:
+        #     padding = 5
+        #     for c in range(2, 5):
+        #         feature_maps[c] = feature_maps[c][:, :, padding * pow(2, c - 2):-padding * pow(2, c - 2)]
+        #         continue
+        #     pass
+        # x = self.deconv1(self.conv1b(self.conv1(feature_maps[0])))
+        # x = self.deconv2(torch.cat([self.conv2b(self.conv2(feature_maps[1])), x], dim=1))
+        # if self.crop:
+        #     x = x[:, :, 5:35]
+        # x = self.deconv3(torch.cat([self.conv3b(self.conv3(feature_maps[2])), x], dim=1))
+        # x = self.deconv4(torch.cat([self.conv4b(self.conv4(feature_maps[3])), x], dim=1))
+        # x = self.deconv5(torch.cat([self.conv5b(self.conv5(feature_maps[4])), x], dim=1))
+        # x = self.depth_pred(x)
+
+        x = disparityregression(192)(feature_maps[4][:, 256:448])[:, None, :, :]
+        x = 100.0 / torch.clamp(x, min=1.0)
+        x[:, :, :20, :] = 0.0
+        x[:, :, -20:, :] = 0.0
         
         if self.crop:
             x = torch.nn.functional.interpolate(x, size=(480, 640), mode='bilinear')
@@ -1298,18 +1350,10 @@ class Depth(nn.Module):
         else:
             x = torch.nn.functional.interpolate(x, size=(640, 640), mode='bilinear')
             pass
+
+        x = self.conv_pred(x)
+
         return x
-
-
-class disparityregression(nn.Module):
-    def __init__(self, maxdisp):
-        super(disparityregression, self).__init__()
-        self.disp = Variable(torch.Tensor(np.reshape(np.array(range(maxdisp)),[1,maxdisp,1,1])).cuda(), requires_grad=False)
-
-    def forward(self, x):
-        disp = self.disp.repeat(x.size()[0],1,x.size()[2],x.size()[3])
-        out = torch.sum(x*disp,1)
-        return out
 
 
 def convbn(in_planes, out_planes, kernel_size, stride, pad, dilation):
@@ -1700,7 +1744,7 @@ def compute_losses(config, rpn_match, rpn_bbox, rpn_class_logits, rpn_pred_bbox,
     mrcnn_class_loss = compute_mrcnn_class_loss(target_class_ids, mrcnn_class_logits)
     mrcnn_bbox_loss = compute_mrcnn_bbox_loss(target_deltas, target_class_ids, mrcnn_bbox)
     mrcnn_mask_loss = compute_mrcnn_mask_loss(config, target_mask, target_class_ids, target_parameters, mrcnn_mask)
-    mrcnn_parameter_loss = compute_mrcnn_parameter_loss(target_parameters, target_class_ids, mrcnn_parameters)
+    mrcnn_parameter_loss = 50*compute_mrcnn_parameter_loss(target_parameters, target_class_ids, mrcnn_parameters)
     return [rpn_class_loss, rpn_bbox_loss, mrcnn_class_loss, mrcnn_bbox_loss, mrcnn_mask_loss, mrcnn_parameter_loss]
 
 
@@ -1786,7 +1830,7 @@ class MaskRCNN(nn.Module):
                     self.depth = Depth(256 + config.MAXDISP, num_output_channels=3)
                     # self.depth = Depth(256, num_output_channels=3)
                 else:
-                    self.depth = Depth(256 + config.MAXDISP, num_output_channels=1)
+                    self.depth = Depth(config.MAXDISP, num_output_channels=1)
                     # self.depth = Depth(256, num_output_channels=1)
                     pass
                 pass
@@ -1913,6 +1957,7 @@ class MaskRCNN(nn.Module):
                                   and 'mask.conv1' not in k
                                   # and 'fpn.C1.0' not in k
                                   and 'classifier.conv1' not in k
+                                  and 'classifier.bn1' not in k
                                   and 'rpn.conv_shared' not in k
                                   }
                     state = self.state_dict()
@@ -2350,6 +2395,7 @@ class MaskRCNN(nn.Module):
             if not valid:
                 detections = torch.FloatTensor()
                 detection_masks = torch.FloatTensor()
+                roi_gt_class_ids = torch.FloatTensor()
                 roi_gt_parameters = torch.FloatTensor()
                 roi_gt_masks = torch.FloatTensor()
                 roi_features = torch.FloatTensor()
@@ -2357,6 +2403,7 @@ class MaskRCNN(nn.Module):
                 if self.config.GPU_COUNT:
                     detections = detections.cuda()
                     detection_masks = detection_masks.cuda()
+                    roi_gt_class_ids = roi_gt_class_ids.cuda()
                     roi_gt_parameters = roi_gt_parameters.cuda()
                     roi_gt_masks = roi_gt_masks.cuda()
                     roi_features = roi_features.cuda()
@@ -2366,8 +2413,10 @@ class MaskRCNN(nn.Module):
 
             # reporter = MemReporter(self)
             # reporter.report(verbose=True)
-            
-            info = [rpn_class_logits, rpn_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox, target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks, roi_gt_parameters, roi_gt_masks, rpn_rois, roi_features, roi_indices]
+
+            info = [rpn_class_logits, rpn_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
+                    target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks,
+                    roi_gt_class_ids, roi_gt_parameters, roi_gt_masks, rpn_rois, roi_features, roi_indices]
             if return_feature_map:
                 feature_map = mrcnn_feature_maps
                 info.append(feature_map)

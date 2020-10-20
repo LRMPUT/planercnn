@@ -127,6 +127,27 @@ def unmoldDetections(config, camera, detections, detection_masks, depth_np, unmo
         pass
     return detections, masks
 
+
+def unmoldDetectionMasks(config, camera, detections, detection_masks):
+    final_masks = []
+    for detectionIndex in range(len(detections)):
+        box = detections[detectionIndex][:4].long()
+        if (box[2] - box[0]) * (box[3] - box[1]) <= 0:
+            continue
+
+        mask = detection_masks[detectionIndex]
+        mask = mask.unsqueeze(0).unsqueeze(0)
+        mask = F.upsample(mask, size=(box[2] - box[0], box[3] - box[1]), mode='bilinear')
+        mask = mask.squeeze(0).squeeze(0)
+
+        final_mask = torch.zeros(config.IMAGE_MAX_DIM, config.IMAGE_MAX_DIM).cuda()
+        final_mask[box[0]:box[2], box[1]:box[3]] = mask
+        final_masks.append(final_mask)
+        continue
+    final_masks = torch.stack(final_masks, dim=0)
+    return final_masks
+
+
 def planeXYZModule(ranges, planes, width, height, max_depth=10):
     """Compute plane XYZ from plane parameters
     ranges: K^(-1)x

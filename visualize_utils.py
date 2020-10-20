@@ -295,6 +295,10 @@ def visualizeBatchDetection(options, config, input_dict, detection_dict, indexOf
     if 'depth_np' in detection_dict:
         cv2.imwrite(options.test_dir + '/' + ('%04d' % indexOffset) + '_depth' + suffix + prediction_suffix + '_np.png',
                     drawDepthImage(detection_dict['depth_np'].squeeze().detach().cpu().numpy()[80:560]))
+        if writer is not None:
+            writer.add_image(('vis/%04d' % indexOffset) + '_depth_np' + suffix,
+                             drawDepthImage(detection_dict['depth_np'].squeeze().detach().cpu().numpy()[80:560]),
+                             dataformats='HWC')
         pass
 
     if 'depth_ori' in detection_dict:

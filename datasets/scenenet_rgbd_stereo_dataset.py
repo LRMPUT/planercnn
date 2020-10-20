@@ -80,10 +80,10 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
                 # left image
                 info_1 = scene[frame_num, 0]
             except Exception as e:
-                print('Exception: ', e)
+                print('Exception for second %s %s: ' % (scene.scene_id, frame_num), e)
                 continue
             except:
-                print('Exception for first %s %s' % (scene.scene_id, frame_num))
+                print('Unknown exception for first %s %s' % (scene.scene_id, frame_num))
                 if self.write_invalid_indices:
                     print('invalid')
                     print(str(index) + ' ' + str(sceneIndex) + ' ' + str(frame_num) + '\n',
@@ -100,9 +100,10 @@ class ScenenetRgbdDataset(ScenenetRgbdDatasetSingle):
                 # right image
                 info_2 = scene[frame_num, 1]
             except Exception as e:
-                print('Exception: ', e)
+                print('Exception for second %s %s: ' % (scene.scene_id, frame_num), e)
+                continue
             except:
-                print('Exception for second %s %s' % (scene.scene_id, frame_num))
+                print('Unknown exception for second %s %s' % (scene.scene_id, frame_num))
                 continue
 
             # info_2 = [image_2, planes_2, plane_info_2, segmentation_2, depth_2, camera_2, extrinsics_2, semantics_2]

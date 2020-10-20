@@ -17,7 +17,7 @@ import pymesh
 import pickle
 from disjoint_set import DisjointSet
 import fnmatch
-
+import time
 
 ROOT_FOLDER = "/mnt/data/datasets/JW/scenenet_rgbd/scenes/"
 
@@ -504,12 +504,12 @@ def loadMesh(scene_id):
 
 
 def processMesh(scene_id):
-    points, faces, segmentation, groupSegments, groupLabels = loadMesh(scene_id)
-    with open(ROOT_FOLDER + scene_id + '/mesh.p', 'wb') as pickle_file:
-        pickle.dump([points, faces, segmentation, groupSegments, groupLabels], pickle_file)
-
-    # with open(ROOT_FOLDER + scene_id + '/mesh.p', 'rb') as pickle_file:
-    #     points, faces, segmentation, groupSegments, groupLabels = pickle.load(pickle_file)
+    # points, faces, segmentation, groupSegments, groupLabels = loadMesh(scene_id)
+    # with open(ROOT_FOLDER + scene_id + '/mesh.p', 'wb') as pickle_file:
+    #     pickle.dump([points, faces, segmentation, groupSegments, groupLabels], pickle_file)
+    #
+    with open(ROOT_FOLDER + scene_id + '/mesh.p', 'rb') as pickle_file:
+        points, faces, segmentation, groupSegments, groupLabels = pickle.load(pickle_file)
 
     mesh = pymesh.form_mesh(points, faces)
     pymesh.save_mesh(ROOT_FOLDER + scene_id + '/' + scene_id + '_cleaned.ply', mesh)
@@ -998,6 +998,9 @@ def processMesh(scene_id):
     planeMeshes = []
     pointIdxToPlanePointIdx = []
 
+    allPlanePointIdxs = None
+    allPlaneFaceIdxs = []
+
     nonPlanarFaceIdxs = []
 
     for faceIndex in range(faces.shape[0]):
@@ -1010,11 +1013,21 @@ def processMesh(scene_id):
                 nonPlanarFaceIdxs.append(faceIndex)
             else:
                 planeFaceIdxs[segment_1].append(faceIndex)
+                allPlaneFaceIdxs.append(faceIndex)
 
     print('Distributed faces')
 
+    allPlanePointsCnt = 0
+    pointIdxToAllPlanePointIdx = {}
     for planeIndex, planePoints in enumerate(planePointIndices):
         curPointIdxToPlanePointIdx = {idx: i for i, idx in enumerate(planePoints)}
+
+        pointIdxToAllPlanePointIdx.update({idx: i + allPlanePointsCnt for i, idx in enumerate(planePoints)})
+        if allPlanePointIdxs is None:
+            allPlanePointIdxs = planePoints
+        else:
+            allPlanePointIdxs = np.concatenate([allPlanePointIdxs, planePoints])
+        allPlanePointsCnt += len(planePoints)
 
         # curPlaneFaceIdxs = []
         curPlaneFaces = []
@@ -1035,24 +1048,69 @@ def processMesh(scene_id):
         # planeFaceIdxs.append(curPlaneFaceIdxs)
         planeMeshes.append(mesh)
         pointIdxToPlanePointIdx.append(curPointIdxToPlanePointIdx)
+
+    allPlaneFaces = []
+    for faceIndex in allPlaneFaceIdxs:
+        face = faces[faceIndex]
+        allPlaneFaces.append([pointIdxToAllPlanePointIdx[face[0]],
+                              pointIdxToAllPlanePointIdx[face[1]],
+                              pointIdxToAllPlanePointIdx[face[2]]])
+
+    allPlaneMesh = None
+    if len(allPlaneFaces) > 0:
+        allPlaneMesh = pymesh.form_mesh(points[allPlanePointIdxs], np.array(allPlaneFaces))
+
     print('precomputed planes info')
 
     removeIndices = []
 
     print('Removing non-planar faces')
-    for planeIndex, planePoints in enumerate(planePointIndices):
-        if planeMeshes[planeIndex]:
-            sq_dists, face_idxs, closest_points = pymesh.distance_to_mesh(planeMeshes[planeIndex], points)
-            dists = np.sqrt(sq_dists)
-            # diffs = np.abs(np.matmul(points, plane) - np.ones(points.shape[0])) / np.linalg.norm(plane)
+    nonPlanarPointIdxs = set()
+    for faceIndex in nonPlanarFaceIdxs:
+        face = faces[faceIndex]
+        nonPlanarPointIdxs.add(face[0])
+        nonPlanarPointIdxs.add(face[1])
+        nonPlanarPointIdxs.add(face[2])
+    nonPlanarPointIdxs = list(nonPlanarPointIdxs)
+    pointIdxToNonPlanarIdx = {}
+    nonPlanarPoints = []
+    for nonPlanarPtIdx, ptIdx in enumerate(nonPlanarPointIdxs):
+        pointIdxToNonPlanarIdx[ptIdx] = nonPlanarPtIdx
+        nonPlanarPoints.append(points[ptIdx])
+    nonPlanarPoints = np.array(nonPlanarPoints)
 
-            for faceIndex in nonPlanarFaceIdxs:
-                face = faces[faceIndex]
+    if allPlaneMesh:
+        sq_dists, face_idxs, closest_points = pymesh.distance_to_mesh(allPlaneMesh, nonPlanarPoints)
+        dists = np.sqrt(sq_dists)
+        # diffs = np.abs(np.matmul(points, plane) - np.ones(points.shape[0])) / np.linalg.norm(plane)
 
-                if dists[face[0]] < pointToMeshThresh and dists[face[1]] < pointToMeshThresh and dists[face[2]] < pointToMeshThresh:
-                    removeIndices.append(faceIndex)
+        for faceIndex in nonPlanarFaceIdxs:
+            face = faces[faceIndex]
+
+            if dists[pointIdxToNonPlanarIdx[face[0]]] < pointToMeshThresh and \
+               dists[pointIdxToNonPlanarIdx[face[1]]] < pointToMeshThresh and \
+               dists[pointIdxToNonPlanarIdx[face[2]]] < pointToMeshThresh:
+                removeIndices.append(faceIndex)
+
+    # removeIndicesComp = []
+    # for planeIndex, planePoints in enumerate(planePointIndices):
+    #     if planeMeshes[planeIndex]:
+    #         sq_dists, face_idxs, closest_points = pymesh.distance_to_mesh(planeMeshes[planeIndex], points)
+    #         dists = np.sqrt(sq_dists)
+    #         # diffs = np.abs(np.matmul(points, plane) - np.ones(points.shape[0])) / np.linalg.norm(plane)
+    #         for faceIndex in nonPlanarFaceIdxs:
+    #             face = faces[faceIndex]
+    #             if dists[face[0]] < pointToMeshThresh and dists[face[1]] < pointToMeshThresh and dists[face[2]] < pointToMeshThresh:
+    #                 removeIndicesComp.append(faceIndex)
+    #
+    # if set(removeIndices) != set(removeIndicesComp):
+    #     print('Sets not equal :(')
+    # else:
+    #     print('Sets are equal :)')
 
     print('Removing planar faces')
+    start_all = time.perf_counter()
+    distance_time = 0.0
     for planeIndex, planePoints in enumerate(planePointIndices):
         plane1 = planes[planeIndex]
         XYZ = points[planePoints]
@@ -1075,7 +1133,10 @@ def processMesh(scene_id):
                 # pointIndices = (diff < 0.005).nonzero()[0]
 
                 if planeMeshes[planeIndex2]:
-                    sq_dists, face_idxs, closest_points = pymesh.distance_to_mesh(planeMeshes[planeIndex2], XYZ)
+                    start_dist = time.perf_counter()
+                    sq_dists, face_idxs, closest_points = pymesh.distance_to_mesh(planeMeshes[planeIndex2], XYZ, engine='igl')
+                    end_dist = time.perf_counter()
+                    distance_time += end_dist - start_dist
                     dists = np.sqrt(sq_dists)
                     mean_dist = np.mean(np.sqrt(sq_dists))
                     # if mean_dist < 0.05 or (planeIndex == 20 and planeIndex2 == 121):
@@ -1088,6 +1149,9 @@ def processMesh(scene_id):
                         dist3 = dists[pointIdxToPlanePointIdx[planeIndex][face[0]]]
                         if dist1 < pointToMeshThresh and dist2 < pointToMeshThresh and dist3 < pointToMeshThresh:
                             removeIndices.append(faceIdx)
+    end_all = time.perf_counter()
+    print('all time = ', end_all - start_all)
+    print('distance time ', distance_time)
     faces = np.delete(faces, removeIndices, axis=0)
 
     # remove faces connecting different planes
@@ -1402,9 +1466,9 @@ def main():
     soft, hard = resource.getrlimit(resource.RLIMIT_AS)
     resource.setrlimit(resource.RLIMIT_AS, (48 * 1024 * 1024 * 1024, hard))
 
-    scene_ids = fnmatch.filter(os.listdir(ROOT_FOLDER), 'scene0[01]??_00')
+    scene_ids = fnmatch.filter(os.listdir(ROOT_FOLDER), 'scene0[2]??_00')
     scene_ids = sorted(scene_ids)
-    # scene_ids = ['scene0400_00']
+    scene_ids = ['scene0021_00']
     print(scene_ids)
 
     np.random.seed(13)

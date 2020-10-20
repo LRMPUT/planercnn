@@ -116,7 +116,7 @@ class PlaneRCNNDetector():
         if self.config.PREDICT_STEREO:
             [rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
              target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks,
-             detection_gt_parameters, detection_gt_masks, rpn_rois, roi_features, roi_indices,
+             detection_gt_class_ids, detection_gt_parameters, detection_gt_masks, rpn_rois, roi_features, roi_indices,
              depth_np_pred, disp1_np_pred] = self.model.predict(
                     [input_pair[0]['image'], input_pair[0]['image_meta'], input_pair[0]['class_ids'],
                      input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
@@ -126,7 +126,7 @@ class PlaneRCNNDetector():
         else:
             [rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
              target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks,
-             detection_gt_parameters, detection_gt_masks, rpn_rois, roi_features, roi_indices,
+             detection_gt_class_ids, detection_gt_parameters, detection_gt_masks, rpn_rois, roi_features, roi_indices,
              depth_np_pred] = self.model.predict(
                     [input_pair[0]['image'], input_pair[0]['image_meta'], input_pair[0]['class_ids'],
                      input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
@@ -135,6 +135,7 @@ class PlaneRCNNDetector():
 
         if len(detections) > 0:
             detections, detection_masks = unmoldDetections(self.config, camera, detections, detection_masks, depth_np_pred, debug=False)
+            detection_gt_masks = unmoldDetectionMasks(self.config, camera, detections, detection_gt_masks)
             pass
 
         XYZ_pred, detection_mask, plane_XYZ = calcXYZModule(self.config, camera, detections, detection_masks, depth_np_pred, return_individual=True)
@@ -146,7 +147,16 @@ class PlaneRCNNDetector():
             XYZ_pred[1:2] = sample[27].cuda()
             pass
 
-        detection_pair.append({'XYZ': XYZ_pred, 'depth': XYZ_pred[1:2], 'mask': detection_mask, 'detection': detections, 'masks': detection_masks, 'depth_np': depth_np_pred, 'plane_XYZ': plane_XYZ})
+        detection_pair.append({'XYZ': XYZ_pred,
+                               'depth': XYZ_pred[1:2],
+                               'mask': detection_mask,
+                               'detection': detections,
+                               'masks': detection_masks,
+                               'depth_np': depth_np_pred,
+                               'plane_XYZ': plane_XYZ,
+                               'detection_gt_class_ids': detection_gt_class_ids,
+                               'detection_gt_parameters': detection_gt_parameters,
+                               'detection_gt_masks': detection_gt_masks})
 
         if ('refine' in self.modelType or 'refine' in self.options.suffix):
             pose = sample[26][0].cuda()
@@ -598,10 +608,25 @@ def evaluate(options):
             input_pair = []
             camera = sample[30][0].cuda()
             for indexOffset in [0, ]:
-                images, image_metas, rpn_match, rpn_bbox, gt_class_ids, gt_boxes, gt_masks, gt_parameters, gt_depth, extrinsics, planes, gt_segmentation = sample[indexOffset + 0].cuda(), sample[indexOffset + 1].numpy(), sample[indexOffset + 2].cuda(), sample[indexOffset + 3].cuda(), sample[indexOffset + 4].cuda(), sample[indexOffset + 5].cuda(), sample[indexOffset + 6].cuda(), sample[indexOffset + 7].cuda(), sample[indexOffset + 8].cuda(), sample[indexOffset + 9].cuda(), sample[indexOffset + 10].cuda(), sample[indexOffset + 11].cuda()
+                [images, image_metas, rpn_match, rpn_bbox, gt_class_ids, gt_boxes, gt_masks, gt_parameters, gt_depth,
+                 extrinsics, planes, gt_segmentation] = sample[indexOffset + 0].cuda(), sample[indexOffset + 1].numpy(), \
+                                                        sample[indexOffset + 2].cuda(), sample[indexOffset + 3].cuda(), \
+                                                        sample[indexOffset + 4].cuda(), sample[indexOffset + 5].cuda(), \
+                                                        sample[indexOffset + 6].cuda(), sample[indexOffset + 7].cuda(), \
+                                                        sample[indexOffset + 8].cuda(), sample[indexOffset + 9].cuda(), \
+                                                        sample[indexOffset + 10].cuda(), sample[indexOffset + 11].cuda()
 
                 masks = (gt_segmentation == torch.arange(gt_segmentation.max() + 1).cuda().view(-1, 1, 1)).float()
-                input_pair.append({'image': images, 'depth': gt_depth, 'bbox': gt_boxes, 'extrinsics': extrinsics, 'segmentation': gt_segmentation, 'camera': camera, 'plane': planes[0], 'masks': masks, 'mask': gt_masks})
+                input_pair.append({
+                                      'image': images,
+                                      'depth': gt_depth,
+                                      'bbox': gt_boxes,
+                                      'extrinsics': extrinsics,
+                                      'segmentation': gt_segmentation,
+                                      'camera': camera,
+                                      'plane': planes[0],
+                                      'masks': masks,
+                                      'mask': gt_masks})
                 continue
 
             if sampleIndex >= options.numTestingImages:
@@ -622,7 +647,8 @@ def evaluate(options):
 
             if 'inference' not in options.dataset:
                 for c in range(len(input_pair)):
-                    evaluateBatchDetection(options, config, input_pair[c], detection_pair[c], statistics=statistics, printInfo=options.debug, evaluate_plane=options.dataset == '')
+                    evaluateBatchDetection(options, config, input_pair[c], detection_pair[c], statistics=statistics,
+                                           printInfo=options.debug, evaluate_plane=options.dataset == '')
                     continue
             # else:
             for c in range(len(detection_pair)):

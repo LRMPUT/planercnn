@@ -157,7 +157,11 @@ def evaluatePlaneDist(config, input_dict, detection_dict, printInfo=False):
 
 
 def evaluatePlaneNorm(config, input_dict, detection_dict, printInfo=False):
-    masks, planes, depth_gt = detection_dict['masks'], detection_dict['detection'][:, 6:9], input_dict['depth']
+    masks, planes, depth_gt = detection_dict['detection_gt_masks'], detection_dict['detection'][:, 6:9], input_dict['depth']
+    target_class_ids = detection_dict['detection_gt_class_ids']
+    pred_class_ids = detection_dict['detection'][:, 4]
+    target_params = detection_dict['detection_gt_parameters']
+
     masks_cropped = masks[:, 80:560]
     ranges = config.getRanges(input_dict['camera']).transpose(1, 2).transpose(0, 1)
     bin_width = 50
@@ -168,26 +172,30 @@ def evaluatePlaneNorm(config, input_dict, detection_dict, printInfo=False):
     dists = None
     for m in range(masks.shape[0]):
         # gt points belonging to the plane
-        XYZ_plane = XYZ[:, masks[m, 80:560, :] > 0]
-        plane_gt = fit_plane_torch(XYZ_plane.transpose(0, 1))
-        normal_gt = plane_gt / plane_gt.norm()
-        normal = planes[m] / planes[m].norm()
-        # dot product between normals -> angle between normals
-        cur_dist = torch.acos(normal.dot(normal_gt)) * 180.0 / np.pi
-        if dists is None:
-            # add dummy dimension
-            dists = cur_dist[None]
-        else:
-            dists = torch.cat([dists, cur_dist[None]])
+        XYZ_plane = XYZ[:, masks[m, 80:560, :] > 0.5]
+        if XYZ_plane.shape[1] >= 500:
+            plane_gt = fit_plane_torch(XYZ_plane.transpose(0, 1))
+            normal_gt = plane_gt / plane_gt.norm()
+            # normal = planes[m] / planes[m].norm()
+            normal = target_params[m]
+            # dot product between normals -> angle between normals
+            cur_dist = torch.acos(torch.clamp(normal.dot(normal_gt), max=1.0)) * 180.0 / np.pi
+            if dists is None:
+                # add dummy dimension
+                dists = cur_dist[None]
+            else:
+                dists = torch.cat([dists, cur_dist[None]])
 
-        area = XYZ_plane.shape[1]
-        bin_idx = int(np.sqrt(area) // bin_width)
-        dists_hist[bin_idx] += cur_dist
-        dists_cnt[bin_idx] += 1.0
+            area = XYZ_plane.shape[1]
+            bin_idx = int(np.sqrt(area) // bin_width)
+            dists_hist[bin_idx] += cur_dist
+            dists_cnt[bin_idx] += 1.0
+        else:
+            print(XYZ_plane.shape)
 
     statistics = []
     statistics.extend([float(dists.mean())])
-    # statistics.extend((dists_hist / dists_cnt).tolist())
+    statistics.extend([torch.nonzero(torch.abs(target_class_ids - pred_class_ids) < 0.5).shape[0]/pred_class_ids.shape[0]])
 
     if printInfo:
         print('plane norm statistics', statistics)
