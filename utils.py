@@ -726,6 +726,38 @@ def fit_plane_ransac(points):
     return best_inliers_mask, best_plane
 
 
+def fit_plane_ransac_torch(points):
+    num_iter = 50
+    plane_diff_threshold = 0.01
+
+    best_inliers = 0
+    best_inliers_mask = None
+    for i in range(num_iter):
+        cur_idxs = torch.randperm(points.shape[0])[:3]
+        cur_points = points[cur_idxs]
+        try:
+            cur_plane = fit_plane_torch(cur_points)
+        except:
+            continue
+
+        # relative distance to the plane
+        diff = torch.abs(torch.matmul(points, cur_plane).view(-1) - torch.ones(points.shape[0], device=points.device))
+        inlier_mask = diff < plane_diff_threshold
+
+        cur_inliers = inlier_mask.sum()
+        if cur_inliers > best_inliers:
+            best_inliers = cur_inliers
+            best_inliers_mask = inlier_mask
+
+        # if enough inliers
+        if cur_inliers.float() / points.shape[0] > 0.9:
+            break
+
+    best_plane = fit_plane_torch(points[best_inliers_mask])
+
+    return best_inliers_mask, best_plane
+
+
 def calc_points_depth(depth, K):
     h = depth.shape[0]
     w = depth.shape[1]
