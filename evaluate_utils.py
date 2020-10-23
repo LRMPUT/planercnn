@@ -150,7 +150,7 @@ def evaluatePlaneDist(config, input_dict, detection_dict, printInfo=False):
             dists_hist[bin_idx] += cur_dists.square().mean().sqrt()
             dists_cnt[bin_idx] += 1.0
 
-            if cur_dists.square().mean().sqrt() > 1.0 and bin_idx == 5:
+            if cur_dists.square().mean().sqrt() > 1.0 and bin_idx > 0:
                 _, plane_gt = fit_plane_ransac_torch(XYZ_plane.transpose(0, 1))
                 plane_gt = plane_gt / (plane_gt.norm() * plane_gt.norm())
                 print(plane_gt)
