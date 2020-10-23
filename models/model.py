@@ -546,7 +546,7 @@ def bbox_overlaps(boxes1, boxes2):
 
     return overlaps
 
-def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_parameters, config):
+def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_parameters, gt_disp, config, camera):
     """Subsamples proposals and generates target box refinment, class_ids,
     and masks for each.
 
@@ -624,6 +624,13 @@ def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_param
         roi_masks = gt_masks[roi_gt_box_assignment.data]
 
         ## Compute mask targets
+        # y1, x1, y2, x2 = positive_rois.chunk(4, dim=1)
+        # y1 /= gt_disp.shape[2]
+        # x1 /= gt_disp.shape[3]
+        # y2 /= gt_disp.shape[2]
+        # x2 /= gt_disp.shape[3]
+        # boxes_disp = torch.cat([y1, x1, y2, x2], dim=1)
+
         boxes = positive_rois
         if config.USE_MINI_MASK:
             ## Transform ROI corrdinates from normalized image space
@@ -637,9 +644,9 @@ def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_param
             y2 = (y2 - gt_y1) / gt_h
             x2 = (x2 - gt_x1) / gt_w
             boxes = torch.cat([y1, x1, y2, x2], dim=1)
-        box_ids = Variable(torch.arange(roi_masks.size()[0]), requires_grad=False).int()
-        if config.GPU_COUNT:
-            box_ids = box_ids.cuda()
+        # box_ids = Variable(torch.arange(roi_masks.size()[0]), requires_grad=False).int()
+        # if config.GPU_COUNT:
+        #     box_ids = box_ids.cuda()
 
         if config.NUM_PARAMETER_CHANNELS > 0:
             # masks = Variable(CropAndResizeFunction(config.MASK_SHAPE[0], config.MASK_SHAPE[1], 0)(roi_masks[:, :, :, 0].contiguous().unsqueeze(1), boxes, box_ids).data, requires_grad=False).squeeze(1)
@@ -662,6 +669,14 @@ def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_param
                              requires_grad=False).squeeze(1)
             masks = torch.round(masks)
 
+            ranges = config.getRangesFull(camera).transpose(1, 2).transpose(0, 1)
+            fx = camera[0]
+            ranges_rois = roi_align(ranges.view(1, 3, ranges.shape[1], ranges.shape[2]),
+                                   [positive_rois],
+                                   (config.SUPPORT_SHAPE[0], config.SUPPORT_SHAPE[1]))
+            ranges_rois = ranges_rois / ranges_rois.norm(dim=1, keepdim=True)
+            roi_gt_planes = roi_gt_parameters / roi_gt_parameters.norm(dim=1, keepdim=True).square()
+            support = (roi_gt_planes.view(-1, 3, 1, 1) * ranges_rois).sum(dim=1) * (config.BASELINE * fx)
             pass
 
         ## Threshold mask pixels at 0.5 to have GT masks be 0 or 1 to use with
@@ -710,6 +725,9 @@ def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_param
         if config.GPU_COUNT:
             zeros = zeros.cuda()
         masks = torch.cat([masks, zeros], dim=0)
+
+        zeros = torch.zeros(negative_count, support.shape[1], support.shape[2], device=support.device, requires_grad=False)
+        support = torch.cat([support, zeros], dim=0)
         
         zeros = Variable(torch.zeros(negative_count, config.NUM_PARAMETERS), requires_grad=False)
         if config.GPU_COUNT:
@@ -732,6 +750,10 @@ def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_param
             zeros = zeros.cuda()
         masks = zeros
 
+        zeros = torch.zeros(negative_count, support.shape[1], support.shape[2], device=support.device,
+                            requires_grad=False)
+        support = zeros
+
         zeros = Variable(torch.zeros(negative_count, config.NUM_PARAMETERS), requires_grad=False)
         if config.GPU_COUNT:
             zeros = zeros.cuda()
@@ -750,7 +772,7 @@ def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_param
             roi_gt_parameters = roi_gt_parameters.cuda()
             pass
 
-    return rois, roi_gt_class_ids, deltas, masks, roi_gt_parameters
+    return rois, roi_gt_class_ids, deltas, masks, roi_gt_parameters, support
 
 
 ############################################################
@@ -1187,6 +1209,12 @@ class Mask(nn.Module):
         self.sigmoid = nn.Sigmoid()
         self.relu = nn.ReLU(inplace=True)
 
+        self.conv5_sup = nn.Conv2d(256, 256, kernel_size=5, stride=1)
+        self.bn5_sup = nn.BatchNorm2d(256, eps=0.001)
+        self.conv6_sup = nn.Conv2d(256, 256, kernel_size=5, stride=1)
+        self.bn6_sup = nn.BatchNorm2d(256, eps=0.001)
+        self.conv7_sup = nn.Conv2d(256, 1, kernel_size=5, stride=1)
+
     def forward(self, x, rois, pool_features=True):
         if pool_features:
             roi_features = pyramid_roi_align([rois] + x, self.pool_size, self.image_shape)
@@ -1205,15 +1233,24 @@ class Mask(nn.Module):
         x = self.conv4(self.padding(x))
         x = self.bn4(x)
         x = self.relu(x)
-        x = self.deconv(x)
-        x = self.relu(x)
-        x = self.conv5(x)
+
+        x_mask = self.deconv(x)
+        x_mask = self.relu(x_mask)
+        x_mask = self.conv5(x_mask)
+
+        x_sup = self.conv5_sup(x)
+        x_sup = self.bn5_sup(x_sup)
+        x_sup = self.conv6_sup(x_sup)
+        x_sup = self.bn6_sup(x_sup)
+        x_sup = self.conv7_sup(x_sup)
+        x_sup = x_sup.squeeze(1)
+
         if self.config.NUM_PARAMETER_CHANNELS > 0 and not self.config.OCCLUSION:
-            x = torch.cat([self.sigmoid(x[:, :-self.num_parameter_channels]), x[:, -self.num_parameter_channels:]], dim=1)
+            x_mask = torch.cat([self.sigmoid(x_mask[:, :-self.num_parameter_channels]), x_mask[:, -self.num_parameter_channels:]], dim=1)
         else:
-            x = self.sigmoid(x)
+            x_mask = self.sigmoid(x_mask)
             pass
-        return x, roi_features
+        return x_mask, x_sup, roi_features
 
 
 class disparityregression(nn.Module):
@@ -1740,7 +1777,14 @@ def compute_mrcnn_parameter_loss(target_parameters, target_class_ids, pred_param
             loss = loss.cuda()
     return loss
 
-def compute_losses(config, rpn_match, rpn_bbox, rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox, target_mask, mrcnn_mask, target_parameters, mrcnn_parameters):
+
+def compute_mrcnn_support_loss(target_support, mrcnn_support):
+    loss = F.smooth_l1_loss(mrcnn_support, target_support)
+    return loss
+
+def compute_losses(config, rpn_match, rpn_bbox, rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits,
+                   target_deltas, mrcnn_bbox, target_mask, mrcnn_mask, target_parameters, mrcnn_parameters,
+                   target_support, mrcnn_support):
 
     rpn_class_loss = compute_rpn_class_loss(rpn_match, rpn_class_logits)
     rpn_bbox_loss = compute_rpn_bbox_loss(rpn_bbox, rpn_match, rpn_pred_bbox)
@@ -1748,7 +1792,9 @@ def compute_losses(config, rpn_match, rpn_bbox, rpn_class_logits, rpn_pred_bbox,
     mrcnn_bbox_loss = compute_mrcnn_bbox_loss(target_deltas, target_class_ids, mrcnn_bbox)
     mrcnn_mask_loss = compute_mrcnn_mask_loss(config, target_mask, target_class_ids, target_parameters, mrcnn_mask)
     mrcnn_parameter_loss = 50*compute_mrcnn_parameter_loss(target_parameters, target_class_ids, mrcnn_parameters)
-    return [rpn_class_loss, rpn_bbox_loss, mrcnn_class_loss, mrcnn_bbox_loss, mrcnn_mask_loss, mrcnn_parameter_loss]
+    mrcnn_support_loss = compute_mrcnn_support_loss(target_support, mrcnn_support)
+    return [rpn_class_loss, rpn_bbox_loss, mrcnn_class_loss, mrcnn_bbox_loss, mrcnn_mask_loss, mrcnn_parameter_loss,
+            mrcnn_support_loss]
 
 
 
@@ -2078,6 +2124,7 @@ class MaskRCNN(nn.Module):
         fx = camera[0]
         gt_disp = fx * torch.tensor(self.config.BASELINE, dtype=torch.float, device=gt_depth.device, requires_grad=False) / \
                         torch.clamp(gt_depth, min=1.0e-4)
+        gt_disp = torch.clamp(gt_disp, min=0.0, max=self.config.MAXDISP - 1)
         if writer is not None:
             writer.add_image('disp_feat/image',
                              torch.clamp(unmold_image_torch(molded_images, self.config), min=0, max=255).squeeze(0),
@@ -2176,13 +2223,12 @@ class MaskRCNN(nn.Module):
             depth_np = torch.ones((1, self.config.IMAGE_MAX_DIM, self.config.IMAGE_MAX_DIM)).cuda()
             pass
         
-        ranges = self.config.getRanges(input[-1]).transpose(1, 2).transpose(0, 1)
+        ranges = self.config.getRanges(camera).transpose(1, 2).transpose(0, 1)
         zeros = torch.zeros(3, (self.config.IMAGE_MAX_DIM - self.config.IMAGE_MIN_DIM) // 2, self.config.IMAGE_MAX_DIM).cuda()
         ranges = torch.cat([zeros, ranges, zeros], dim=1)
-        ranges = torch.nn.functional.interpolate(ranges.unsqueeze(0), size=(160, 160), mode='bilinear')
-        ranges = self.coordinates(ranges * 10)
-        
-        
+        ranges_inter = torch.nn.functional.interpolate(ranges.unsqueeze(0), size=(160, 160), mode='bilinear')
+        ranges_feat = self.coordinates(ranges_inter * 10)
+
         ## Loop through pyramid layers
         layer_outputs = []  ## list of lists
         for p in rpn_feature_maps:
@@ -2210,7 +2256,7 @@ class MaskRCNN(nn.Module):
         if mode == 'inference':
             ## Network Heads
             ## Proposal classifier and BBox regressor heads
-            mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_parameters = self.classifier(mrcnn_feature_maps, rpn_rois, ranges)
+            mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_parameters = self.classifier(mrcnn_feature_maps, rpn_rois, ranges_feat)
 
             ## Detections
             ## output is [batch, num_detections, (y1, x1, y2, x2, class_id, score)] in image coordinates
@@ -2231,7 +2277,7 @@ class MaskRCNN(nn.Module):
             detection_boxes = detection_boxes.unsqueeze(0)
 
             ## Create masks for detections
-            mrcnn_mask, roi_features = self.mask(mrcnn_feature_maps, detection_boxes)
+            mrcnn_mask, mrcnn_support, roi_features = self.mask(mrcnn_feature_maps, detection_boxes)
 
             ## Add back batch dimension
             detections = detections.unsqueeze(0)
@@ -2256,8 +2302,8 @@ class MaskRCNN(nn.Module):
             ## Subsamples proposals and generates target outputs for training
             ## Note that proposal class IDs, gt_boxes, and gt_masks are zero
             ## padded. Equally, returned rois and targets are zero padded.
-            rois, target_class_ids, target_deltas, target_mask, target_parameters = \
-                detection_target_layer(rpn_rois, gt_class_ids, gt_boxes, gt_masks, gt_parameters, self.config)
+            rois, target_class_ids, target_deltas, target_mask, target_parameters, target_support = \
+                detection_target_layer(rpn_rois, gt_class_ids, gt_boxes, gt_masks, gt_parameters, gt_disp, self.config, camera)
 
             if len(rois) == 0:
                 mrcnn_class_logits = Variable(torch.FloatTensor())
@@ -2275,10 +2321,10 @@ class MaskRCNN(nn.Module):
                 ## Network Heads
                 ## Proposal classifier and BBox regressor heads
                 #print([maps.shape for maps in mrcnn_feature_maps], target_parameters.shape)
-                mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_parameters = self.classifier(mrcnn_feature_maps, rois, ranges, target_parameters)
+                mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_parameters = self.classifier(mrcnn_feature_maps, rois, ranges_feat, target_parameters)
                 
                 ## Create masks for detections
-                mrcnn_mask, _ = self.mask(mrcnn_feature_maps, rois)
+                mrcnn_mask, mrcnn_support, _ = self.mask(mrcnn_feature_maps, rois)
 
             return [rpn_class_logits, rpn_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox, target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, rois, depth_np]
         
@@ -2301,8 +2347,8 @@ class MaskRCNN(nn.Module):
             ## Note that proposal class IDs, gt_boxes, and gt_masks are zero
             ## padded. Equally, returned rois and targets are zero padded.
             
-            rois, target_class_ids, target_deltas, target_mask, target_parameters = \
-                detection_target_layer(rpn_rois, gt_class_ids, gt_boxes, gt_masks, gt_parameters, self.config)
+            rois, target_class_ids, target_deltas, target_mask, target_parameters, target_support = \
+                detection_target_layer(rpn_rois, gt_class_ids, gt_boxes, gt_masks, gt_parameters, gt_disp, self.config, camera)
 
             if len(rois) == 0:
                 mrcnn_class_logits = Variable(torch.FloatTensor())
@@ -2319,9 +2365,9 @@ class MaskRCNN(nn.Module):
             else:
                 ## Network Heads
                 ## Proposal classifier and BBox regressor heads
-                mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_parameters, roi_features = self.classifier(mrcnn_feature_maps, rois, ranges, pool_features=True)
+                mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_parameters, roi_features = self.classifier(mrcnn_feature_maps, rois, ranges_feat, pool_features=True)
                 ## Create masks for detections
-                mrcnn_mask, _ = self.mask(mrcnn_feature_maps, rois)
+                mrcnn_mask, mrcnn_support, _ = self.mask(mrcnn_feature_maps, rois)
                 pass
 
             h, w = self.config.IMAGE_SHAPE[:2]
@@ -2330,7 +2376,8 @@ class MaskRCNN(nn.Module):
                 scale = scale.cuda()
 
             if use_refinement:
-                mrcnn_class_logits_final, mrcnn_class_final, mrcnn_bbox_final, mrcnn_parameters_final, roi_features = self.classifier(mrcnn_feature_maps, rpn_rois[0], ranges, pool_features=True)
+                [mrcnn_class_logits_final, mrcnn_class_final, mrcnn_bbox_final, mrcnn_parameters_final,
+                 roi_features] = self.classifier(mrcnn_feature_maps, rpn_rois[0], ranges_feat, pool_features=True)
 
                 ## Add back batch dimension
                 ## Create masks for detections
@@ -2340,7 +2387,7 @@ class MaskRCNN(nn.Module):
                 if len(detections) > 0:                
                     detection_boxes = detections[:, :4] / scale                
                     detection_boxes = detection_boxes.unsqueeze(0)
-                    detection_masks, _ = self.mask(mrcnn_feature_maps, detection_boxes)
+                    detection_masks, detection_support, _ = self.mask(mrcnn_feature_maps, detection_boxes)
                     roi_features = roi_features[indices]
                     pass
             else:
@@ -2354,7 +2401,7 @@ class MaskRCNN(nn.Module):
                 if len(detections) > 0:
                     detection_boxes = detections[:, :4] / scale
                     detection_boxes = detection_boxes.unsqueeze(0)              
-                    detection_masks, _ = self.mask(mrcnn_feature_maps, detection_boxes)
+                    detection_masks, detection_support, _ = self.mask(mrcnn_feature_maps, detection_boxes)
                     roi_features = roi_features[indices]                    
                     pass
                 pass
@@ -2454,8 +2501,8 @@ class MaskRCNN(nn.Module):
             # reporter.report(verbose=True)
 
             info = [rpn_class_logits, rpn_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
-                    target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks,
-                    roi_gt_class_ids, roi_gt_parameters, roi_gt_masks, rpn_rois, roi_features, roi_indices]
+                    target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, target_support, mrcnn_support, detections,
+                    detection_masks, roi_gt_class_ids, roi_gt_parameters, roi_gt_masks, rpn_rois, roi_features, roi_indices]
             if return_feature_map:
                 feature_map = mrcnn_feature_maps
                 info.append(feature_map)

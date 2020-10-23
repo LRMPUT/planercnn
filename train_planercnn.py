@@ -56,7 +56,7 @@ def train(options):
 
     print('the number of images', len(dataset))
 
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
     # dataloader_test = DataLoader(dataset_test, batch_size=1, shuffle=True)
 
     model = MaskRCNN(config)
@@ -159,33 +159,37 @@ def train(options):
 
             if config.PREDICT_STEREO:
                 [rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
-                 target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks,
-                 detection_gt_class_ids, detection_gt_parameters, detection_gt_masks, rpn_rois, roi_features, roi_indices,
-                 feature_map, depth_np_pred, disp1_np_pred] = model.predict(
+                 target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, target_support, mrcnn_support,
+                 detections, detection_masks, detection_gt_class_ids, detection_gt_parameters, detection_gt_masks,
+                 rpn_rois, roi_features, roi_indices, feature_map, depth_np_pred, disp1_np_pred] = model.predict(
                         [input_pair[0]['image'], input_pair[0]['image_meta'], input_pair[0]['class_ids'],
                          input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
                          input_pair[0]['camera'],
                          input_pair[1]['image']],
-                        mode='training_detection', use_nms=2, use_refinement='refine' in options.suffix,
+                        mode='training_detection', use_nms=2, use_refinement=False,
                         return_feature_map=True, writer=writer if sampleIndex % 100 == 0 else None)
             else:
                 [rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
-                 target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks,
-                 detection_gt_class_ids, detection_gt_parameters, detection_gt_masks, rpn_rois, roi_features, roi_indices,
-                 feature_map, depth_np_pred] = model.predict(
+                 target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, target_support, mrcnn_support,
+                 detections, detection_masks, detection_gt_class_ids, detection_gt_parameters, detection_gt_masks,
+                 rpn_rois, roi_features, roi_indices, feature_map, depth_np_pred] = model.predict(
                         [input_pair[0]['image'], input_pair[0]['image_meta'], input_pair[0]['class_ids'],
                          input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
                          input_pair[0]['camera'], input_pair[0]['depth']],
-                        mode='training_detection', use_nms=2, use_refinement='refine' in options.suffix,
+                        mode='training_detection', use_nms=2, use_refinement=False,
                         return_feature_map=True)
 
             [rpn_class_loss, rpn_bbox_loss, mrcnn_class_loss, mrcnn_bbox_loss, mrcnn_mask_loss,
-             mrcnn_parameter_loss] = compute_losses(
+             mrcnn_parameter_loss, mrcnn_support_loss] = compute_losses(
                     config, input_pair[0]['rpn_match'], input_pair[0]['rpn_bbox'], rpn_class_logits, rpn_pred_bbox,
                     target_class_ids, mrcnn_class_logits,
-                    target_deltas, mrcnn_bbox, target_mask, mrcnn_mask, target_parameters, mrcnn_parameters)
+                    target_deltas, mrcnn_bbox,
+                    target_mask, mrcnn_mask,
+                    target_parameters, mrcnn_parameters,
+                    target_support, mrcnn_support)
 
-            losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss]
+            losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss + mrcnn_support_loss]
+            # losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss]
             # losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss]
             if writer is not None and sampleIndex % 100 == 0:
                 writer.add_scalar('maskrcnn_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)

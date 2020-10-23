@@ -121,6 +121,7 @@ class Config(object):
     POOL_SIZE = 14
     MASK_POOL_SIZE = 14
     MASK_SHAPE = [28, 28]
+    SUPPORT_SHAPE = [2, 2]
     FINAL_MASK_SHAPE = [224, 224]  # (height, width) of the mini-mask
     # Maximum number of ground truth instances to use in one image
     MAX_GT_INSTANCES = 100
@@ -188,6 +189,14 @@ class Config(object):
             self.URANGE_UNIT = ((torch.arange(self.IMAGE_MAX_DIM, requires_grad=False).float() + 0.5) / self.IMAGE_MAX_DIM).view((1, -1)).repeat(self.IMAGE_MIN_DIM, 1)
             self.VRANGE_UNIT = ((torch.arange(self.IMAGE_MIN_DIM, requires_grad=False).float() + 0.5) / self.IMAGE_MIN_DIM).view((-1, 1)).repeat(1, self.IMAGE_MAX_DIM)
             self.ONES = torch.ones(self.URANGE_UNIT.shape, requires_grad=False)
+
+            self.URANGE_UNIT_F = ((torch.arange(self.IMAGE_MAX_DIM,
+                                              requires_grad=False).float() + 0.5) / self.IMAGE_MAX_DIM).view(
+                    (1, -1)).repeat(self.IMAGE_MAX_DIM, 1)
+            self.VRANGE_UNIT_F = ((torch.arange(self.IMAGE_MAX_DIM,
+                                              requires_grad=False).float() + 0.5) / self.IMAGE_MAX_DIM).view(
+                    (-1, 1)).repeat(1, self.IMAGE_MAX_DIM)
+            self.ONES_F = torch.ones(self.URANGE_UNIT_F.shape, requires_grad=False)
             pass
         
         
@@ -216,6 +225,9 @@ class Config(object):
             self.URANGE_UNIT = self.URANGE_UNIT.cuda()
             self.VRANGE_UNIT = self.VRANGE_UNIT.cuda()
             self.ONES = self.ONES.cuda()
+            self.URANGE_UNIT_F = self.URANGE_UNIT_F.cuda()
+            self.VRANGE_UNIT_F = self.VRANGE_UNIT_F.cuda()
+            self.ONES_F = self.ONES_F.cuda()
             self.MEAN_PIXEL_TENSOR = self.MEAN_PIXEL_TENSOR.cuda()
             if hasattr(self, 'ANCHOR_PLANES_TENSOR'):
                 self.ANCHOR_PLANES_TENSOR = self.ANCHOR_PLANES_TENSOR.cuda()
@@ -363,7 +375,12 @@ class Config(object):
         vrange = (self.VRANGE_UNIT * self.METADATA[5] - self.METADATA[3]) / self.METADATA[1]
         ranges = torch.stack([urange, self.ONES, -vrange], dim=-1)
         return ranges
-        
+
+    def getRangesFull(self, metadata):
+        urange = (self.URANGE_UNIT_F * self.METADATA[4] - self.METADATA[2]) / self.METADATA[0]
+        vrange = (self.VRANGE_UNIT_F * self.METADATA[5] - self.METADATA[3]) / self.METADATA[1]
+        ranges = torch.stack([urange, self.ONES_F, -vrange], dim=-1)
+        return ranges
 
 class PlaneConfig(Config):
     """Configuration for training on ScanNet.
