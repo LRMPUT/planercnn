@@ -504,12 +504,14 @@ def loadMesh(scene_id):
 
 
 def processMesh(scene_id):
-    # points, faces, segmentation, groupSegments, groupLabels = loadMesh(scene_id)
-    # with open(ROOT_FOLDER + scene_id + '/mesh.p', 'wb') as pickle_file:
-    #     pickle.dump([points, faces, segmentation, groupSegments, groupLabels], pickle_file)
-    #
-    with open(ROOT_FOLDER + scene_id + '/mesh.p', 'rb') as pickle_file:
-        points, faces, segmentation, groupSegments, groupLabels = pickle.load(pickle_file)
+    if os.path.exists(ROOT_FOLDER + scene_id + '/mesh.p'):
+        print('Reading segmented mesh from file')
+        with open(ROOT_FOLDER + scene_id + '/mesh.p', 'rb') as pickle_file:
+            points, faces, segmentation, groupSegments, groupLabels = pickle.load(pickle_file)
+    else:
+        points, faces, segmentation, groupSegments, groupLabels = loadMesh(scene_id)
+        with open(ROOT_FOLDER + scene_id + '/mesh.p', 'wb') as pickle_file:
+            pickle.dump([points, faces, segmentation, groupSegments, groupLabels], pickle_file)
 
     mesh = pymesh.form_mesh(points, faces)
     pymesh.save_mesh(ROOT_FOLDER + scene_id + '/' + scene_id + '_cleaned.ply', mesh)
@@ -996,6 +998,7 @@ def processMesh(scene_id):
     # remove faces that lay on the same plane
     planeFaceIdxs = [[] for _ in range(len(planePointIndices))]
     planeMeshes = []
+    planeEngines = []
     pointIdxToPlanePointIdx = []
 
     allPlanePointIdxs = None
@@ -1039,14 +1042,18 @@ def processMesh(scene_id):
                                   curPointIdxToPlanePointIdx[face[2]]])
 
         mesh = None
+        engine = None
         if len(curPlaneFaces) > 0:
             mesh = pymesh.form_mesh(points[planePoints], np.array(curPlaneFaces))
+            engine = pymesh.BVH()
+            engine.load_mesh(mesh)
 
         if debug and len(planePoints) > 10000:
             print('plane %d, %d vertices, %d faces, ' % (planeIndex, len(planePoints), len(curPlaneFaces)), planes[planeIndex])
 
         # planeFaceIdxs.append(curPlaneFaceIdxs)
         planeMeshes.append(mesh)
+        planeEngines.append(engine)
         pointIdxToPlanePointIdx.append(curPointIdxToPlanePointIdx)
 
     allPlaneFaces = []
@@ -1134,7 +1141,9 @@ def processMesh(scene_id):
 
                 if planeMeshes[planeIndex2]:
                     start_dist = time.perf_counter()
-                    sq_dists, face_idxs, closest_points = pymesh.distance_to_mesh(planeMeshes[planeIndex2], XYZ, engine='igl')
+                    sq_dists, face_idxs, closest_points = pymesh.distance_to_mesh(planeMeshes[planeIndex2],
+                                                                                  XYZ,
+                                                                                  bvh=planeEngines[planeIndex2])
                     end_dist = time.perf_counter()
                     distance_time += end_dist - start_dist
                     dists = np.sqrt(sq_dists)
@@ -1468,7 +1477,7 @@ def main():
 
     scene_ids = fnmatch.filter(os.listdir(ROOT_FOLDER), 'scene0[2]??_00')
     scene_ids = sorted(scene_ids)
-    scene_ids = ['scene0021_00']
+    # scene_ids = ['scene0021_00']
     print(scene_ids)
 
     np.random.seed(13)

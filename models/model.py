@@ -787,7 +787,8 @@ def clip_to_window(window, boxes):
     boxes = torch.stack([boxes[:, 0].clamp(float(window[0]), float(window[2])), boxes[:, 1].clamp(float(window[1]), float(window[3])), boxes[:, 2].clamp(float(window[0]), float(window[2])), boxes[:, 3].clamp(float(window[1]), float(window[3]))], dim=-1)
     return boxes
 
-def refine_detections(rois, probs, deltas, parameters, window, config, return_indices=False, use_nms=1, one_hot=True):
+def refine_detections(rois, probs, deltas, parameters,
+                      window, config, return_indices=False, use_nms=1, one_hot=True):
     """Refine classified proposals and filter overlaps and return final
     detections.
 
@@ -937,7 +938,8 @@ def refine_detections(rois, probs, deltas, parameters, window, config, return_in
     return result
 
 
-def detection_layer(config, rois, mrcnn_class, mrcnn_bbox, mrcnn_parameter, image_meta, return_indices=False, use_nms=1, one_hot=True):
+def detection_layer(config, rois, mrcnn_class, mrcnn_bbox, mrcnn_parameter,
+                    image_meta, return_indices=False, use_nms=1, one_hot=True):
     """Takes classified proposal boxes and their bounding box deltas and
     returns the final detection boxes.
 
@@ -956,8 +958,8 @@ def detection_layer(config, rois, mrcnn_class, mrcnn_bbox, mrcnn_parameter, imag
         else:
             return torch.zeros(0)
         
-    return refine_detections(rois, mrcnn_class, mrcnn_bbox, mrcnn_parameter, window, config, return_indices=return_indices, use_nms=use_nms, one_hot=one_hot)
-
+    return refine_detections(rois, mrcnn_class, mrcnn_bbox, mrcnn_parameter, window, config,
+                             return_indices=return_indices, use_nms=use_nms, one_hot=one_hot)
 
 
 ############################################################
@@ -2392,7 +2394,7 @@ class MaskRCNN(nn.Module):
                     pass
             else:
                 mrcnn_class_logits_final, mrcnn_class_final, mrcnn_bbox_final, mrcnn_parameters_final = mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_parameters
-                
+
                 rpn_rois = rois
                 detections, indices, _ = detection_layer(self.config, rpn_rois, mrcnn_class_final, mrcnn_bbox_final,
                                                          mrcnn_parameters_final, image_metas, return_indices=True,
@@ -2429,6 +2431,7 @@ class MaskRCNN(nn.Module):
                     pass
                 detections = detections[positive_roi_bool]
                 detection_masks = detection_masks[positive_roi_bool]
+                detection_support = detection_support[positive_roi_bool]
                 roi_features = roi_features[positive_roi_bool]
                 if len(detections) > 0:
                     positive_indices = torch.nonzero(positive_roi_bool)[:, 0]
@@ -2481,6 +2484,7 @@ class MaskRCNN(nn.Module):
             if not valid:
                 detections = torch.FloatTensor()
                 detection_masks = torch.FloatTensor()
+                detection_support = torch.FloatTensor()
                 roi_gt_class_ids = torch.FloatTensor()
                 roi_gt_parameters = torch.FloatTensor()
                 roi_gt_masks = torch.FloatTensor()
@@ -2489,6 +2493,7 @@ class MaskRCNN(nn.Module):
                 if self.config.GPU_COUNT:
                     detections = detections.cuda()
                     detection_masks = detection_masks.cuda()
+                    detection_support = detection_masks.cuda()
                     roi_gt_class_ids = roi_gt_class_ids.cuda()
                     roi_gt_parameters = roi_gt_parameters.cuda()
                     roi_gt_masks = roi_gt_masks.cuda()
@@ -2501,8 +2506,9 @@ class MaskRCNN(nn.Module):
             # reporter.report(verbose=True)
 
             info = [rpn_class_logits, rpn_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
-                    target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, target_support, mrcnn_support, detections,
-                    detection_masks, roi_gt_class_ids, roi_gt_parameters, roi_gt_masks, rpn_rois, roi_features, roi_indices]
+                    target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, target_support, mrcnn_support,
+                    detections, detection_masks, detection_support,
+                    roi_gt_class_ids, roi_gt_parameters, roi_gt_masks, rpn_rois, roi_features, roi_indices]
             if return_feature_map:
                 feature_map = mrcnn_feature_maps
                 info.append(feature_map)
@@ -2993,7 +2999,8 @@ def unmold_detections(config, detections, mrcnn_mask, image_shape, window, debug
         class_ids = np.delete(class_ids, exclude_ix, axis=0)
         scores = np.delete(scores, exclude_ix, axis=0)
         masks = np.delete(masks, exclude_ix, axis=0)
-        parameters = np.delete(parameters, exclude_ix, axis=0)        
+        parameters = np.delete(parameters, exclude_ix, axis=0)
+
         N = class_ids.shape[0]
 
     ## Resize masks to original image size and set boundary threshold.

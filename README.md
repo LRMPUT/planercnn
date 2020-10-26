@@ -169,4 +169,6 @@ Our implementation uses the nms/roialign from the Mask R-CNN implementation from
 ```
 Xvfb :99 -screen 0 1024x768x24 &
 export DISPLAY=:99
+export PYTHONPATH=$(pwd)
+python data_prep/parse.py
 ```

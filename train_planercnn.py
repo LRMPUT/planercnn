@@ -160,7 +160,7 @@ def train(options):
             if config.PREDICT_STEREO:
                 [rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
                  target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, target_support, mrcnn_support,
-                 detections, detection_masks, detection_gt_class_ids, detection_gt_parameters, detection_gt_masks,
+                 detections, detection_masks, detection_support, detection_gt_class_ids, detection_gt_parameters, detection_gt_masks,
                  rpn_rois, roi_features, roi_indices, feature_map, depth_np_pred, disp1_np_pred] = model.predict(
                         [input_pair[0]['image'], input_pair[0]['image_meta'], input_pair[0]['class_ids'],
                          input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
@@ -171,7 +171,7 @@ def train(options):
             else:
                 [rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
                  target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, target_support, mrcnn_support,
-                 detections, detection_masks, detection_gt_class_ids, detection_gt_parameters, detection_gt_masks,
+                 detections, detection_masks, detection_support, detection_gt_class_ids, detection_gt_parameters, detection_gt_masks,
                  rpn_rois, roi_features, roi_indices, feature_map, depth_np_pred] = model.predict(
                         [input_pair[0]['image'], input_pair[0]['image_meta'], input_pair[0]['class_ids'],
                          input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
@@ -188,7 +188,10 @@ def train(options):
                     target_parameters, mrcnn_parameters,
                     target_support, mrcnn_support)
 
-            losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss + mrcnn_support_loss]
+            # losses += [rpn_class_loss + rpn_bbox_loss + \
+            #            mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss + mrcnn_support_loss]
+            losses += [rpn_class_loss + rpn_bbox_loss + \
+                       mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_support_loss]
             # losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss]
             # losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss]
             if writer is not None and sampleIndex % 100 == 0:
@@ -199,6 +202,7 @@ def train(options):
                 writer.add_scalar('mrcnn_bbox_loss', mrcnn_bbox_loss, global_step=epoch * len(dataset) + sampleIndex)
                 writer.add_scalar('mrcnn_mask_loss', mrcnn_mask_loss, global_step=epoch * len(dataset) + sampleIndex)
                 writer.add_scalar('mrcnn_parameter_loss', mrcnn_parameter_loss, global_step=epoch * len(dataset) + sampleIndex)
+                writer.add_scalar('mrcnn_support_loss', mrcnn_support_loss, global_step=epoch * len(dataset) + sampleIndex)
 
             gt_depth = input_pair[0]['depth']
             if config.PREDICT_NORMAL_NP:
@@ -250,7 +254,11 @@ def train(options):
                     pass
 
             if len(detections) > 0:
-                detections, detection_masks = unmoldDetections(config, camera, detections, detection_masks, depth_np_pred, normal_np_pred, debug=False)
+                detections, detection_masks = unmoldDetections(config, camera, detections,
+                                                                 detection_masks,
+                                                                 detection_support,
+                                                                 depth_np_pred,
+                                                                 normal_np_pred, debug=False)
                 if 'refine_only' in options.suffix:
                     detections, detection_masks = detections.detach(), detection_masks.detach()
                     pass

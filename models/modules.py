@@ -10,8 +10,29 @@ import time
 import numpy as np
 from torch import nn
 import sys
+import utils
 
-def unmoldDetections(config, camera, detections, detection_masks, depth_np, unmold_masks=True, debug=False):
+def apply_support(config, camera, rois, support):
+    ranges = config.getRangesFull(camera).transpose(1, 2).transpose(0, 1)
+    fx = camera[0]
+    ranges_rois = utils.roi_align(ranges.view(1, 3, ranges.shape[1], ranges.shape[2]),
+                            [rois],
+                            (config.SUPPORT_SHAPE[0], config.SUPPORT_SHAPE[1]))
+    # depth from disparity
+    support = fx * config.BASELINE / torch.clamp(support, min=1.0)
+    support_pts = support[:, None, :, :] * ranges_rois
+    planes = torch.zeros(rois.shape[0], 3, device=rois.device)
+    for r in range(rois.shape[0]):
+        # (x, y, z) goes to the last dimension
+        cur_pts = support_pts[r].transpose(0, 2).reshape(-1, 3)
+        try:
+            cur_plane = utils.fit_plane_torch(cur_pts)
+            planes[r] = cur_plane
+        except:
+            continue
+    return planes
+
+def unmoldDetections(config, camera, detections, detection_masks, detection_support, depth_np, unmold_masks=True, debug=False):
     """Reformats the detections of one image from the format of the neural
     network output to a format suitable for use in the rest of the
     application.
@@ -116,8 +137,8 @@ def unmoldDetections(config, camera, detections, detection_masks, depth_np, unmo
                 plane_offsets = torch.norm(plane_parameters, dim=-1, keepdim=True)
                 plane_parameters = plane_parameters / torch.clamp(torch.pow(plane_offsets, 2), 1e-4)                
             else:
-                ## We compute only plane offset using depthmap prediction                
-                plane_parameters = detections[:, 6:9]            
+                ## We compute only plane offset using depthmap prediction
+                plane_parameters = detections[:, 6:9]
                 plane_normals = plane_parameters / torch.clamp(torch.norm(plane_parameters, dim=-1, keepdim=True), 1e-4)
                 offsets = ((plane_normals.view(-1, 3, 1, 1) * XYZ_np_cropped).sum(1) * masks_cropped).sum(-1).sum(-1) / torch.clamp(masks_cropped.sum(-1).sum(-1), min=1e-4)
                 plane_parameters = plane_normals * offsets.view((-1, 1))
@@ -125,6 +146,17 @@ def unmoldDetections(config, camera, detections, detection_masks, depth_np, unmo
             pass
         detections = torch.cat([detections[:, :6], plane_parameters], dim=-1)
         pass
+    if 'none' in config.ANCHOR_TYPE:
+        rois = detections[:, :4].clone()
+        # y
+        rois[:, [0, 2]] /= depth_np.shape[1]
+        # x
+        rois[:, [1, 3]] /= depth_np.shape[2]
+        plane_parameters = apply_support(config, camera, rois, detection_support)
+        plane_parameters = plane_parameters / torch.clamp(torch.norm(plane_parameters,
+                                                                     dim=-1,
+                                                                     keepdim=True).square(), 1e-4)
+        detections = torch.cat([detections[:, :6], plane_parameters], dim=-1)
     return detections, masks
 
 
