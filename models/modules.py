@@ -376,6 +376,35 @@ def invertDepth(depth, inverse=False):
         return depth
 
 
+def create_disp_vol(config, disp, rois, pool_size):
+    if len(rois.shape) == 3:
+        rois = rois.squeeze(0)
+    disp_rois = utils.roi_align(disp,
+                               [rois],
+                               pool_size)
+
+    disp_rois = torch.clamp(disp_rois, min=0.0, max=config.MAXDISP - 1)
+    disp_rois = disp_rois.permute(0, 2, 3, 1)
+    disp_vol = torch.zeros((rois.shape[0], pool_size, pool_size, config.MAXDISP),
+                           dtype=torch.float, device=disp.device)
+
+    cur_disp_low = disp_rois.floor().to(torch.long)
+    cur_disp_high = disp_rois.ceil().to(torch.long)
+    mask = cur_disp_high < config.MAXDISP
+
+    mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, device=disp.device)
+    mask_vol.scatter_(-1, cur_disp_low.clamp(max=config.MAXDISP - 1), mask)
+    disp_vol[mask_vol] = 1.0 - (disp_rois[mask] - cur_disp_low[mask])
+
+    mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, device=disp.device)
+    mask_vol.scatter_(-1, cur_disp_high.clamp(max=config.MAXDISP - 1), mask)
+    disp_vol[mask_vol] = 1.0 - (cur_disp_high[mask] - disp_rois[mask])
+
+    # move disp dimension (3) to 1
+    disp_vol = disp_vol.permute(0, 3, 1, 2)
+    return disp_vol
+
+
 class PlaneToDepth(torch.nn.Module):
     def __init__(self, normalized_K = True, normalized_flow = True, inverse_depth = True, W = 64, H = 48):
 

@@ -190,9 +190,10 @@ def train(options):
 
             # losses += [rpn_class_loss + rpn_bbox_loss + \
             #            mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss + mrcnn_support_loss]
-            losses += [rpn_class_loss + rpn_bbox_loss + \
-                       mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_support_loss]
-            # losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss]
+            # losses += [rpn_class_loss + rpn_bbox_loss + \
+            #            mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_support_loss]
+            losses += [rpn_class_loss + rpn_bbox_loss +
+                       mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss]
             # losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss]
             if writer is not None and sampleIndex % 100 == 0:
                 writer.add_scalar('maskrcnn_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)

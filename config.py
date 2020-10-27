@@ -118,7 +118,7 @@ class Config(object):
         pass
 
     # Pooled ROIs
-    POOL_SIZE = 14
+    POOL_SIZE = 7
     MASK_POOL_SIZE = 14
     MASK_SHAPE = [28, 28]
     SUPPORT_SHAPE = [2, 2]

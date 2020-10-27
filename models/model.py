@@ -1132,12 +1132,12 @@ class Classifier(nn.Module):
         self.num_classes = num_classes
         self.num_parameters = num_parameters
         self.padding = SamePad2d(kernel_size=3, stride=1)
-        self.conv1 = nn.Conv2d(self.depth + 64, self.depth + 64, kernel_size=3, stride=1)
-        self.bn1 = nn.BatchNorm2d(self.depth + 64, eps=0.001, momentum=0.01)
-        self.conv1b = nn.Conv2d(self.depth + 64, 1024, kernel_size=self.pool_size, stride=1)
-        self.bn1b = nn.BatchNorm2d(1024, eps=0.001, momentum=0.01)
-        # self.conv1 = nn.Conv2d(self.depth + 64, 1024, kernel_size=self.pool_size, stride=1)
-        # self.bn1 = nn.BatchNorm2d(1024, eps=0.001, momentum=0.01)
+        # self.conv1 = nn.Conv2d(self.depth + 64, self.depth + 64, kernel_size=3, stride=1)
+        # self.bn1 = nn.BatchNorm2d(self.depth + 64, eps=0.001, momentum=0.01)
+        # self.conv1b = nn.Conv2d(self.depth + 64, 1024, kernel_size=self.pool_size, stride=1)
+        # self.bn1b = nn.BatchNorm2d(1024, eps=0.001, momentum=0.01)
+        self.conv1 = nn.Conv2d(self.depth + 64, 1024, kernel_size=self.pool_size, stride=1)
+        self.bn1 = nn.BatchNorm2d(1024, eps=0.001, momentum=0.01)
         self.conv2 = nn.Conv2d(1024, 1024, kernel_size=1, stride=1)
         self.bn2 = nn.BatchNorm2d(1024, eps=0.001, momentum=0.01)
         self.relu = nn.ReLU(inplace=True)
@@ -1148,20 +1148,24 @@ class Classifier(nn.Module):
         self.linear_bbox = nn.Linear(1024, num_classes * 4)
 
         self.debug = debug
-        if self.debug:        
+        if self.debug:
             self.linear_parameters = nn.Linear(3, num_classes * self.num_parameters)
         else:
             self.linear_parameters = nn.Linear(1024, num_classes * self.num_parameters)
             pass
 
-    def forward(self, x, rois, ranges, pool_features=True, gt=None):
+    def forward(self, x, rois, ranges, config, disp, pool_features=True, gt=None):
         x = pyramid_roi_align([rois] + x, self.pool_size, self.image_shape)
         ranges = coordinates_roi([rois] + [ranges, ], self.pool_size, self.image_shape)
-        roi_features = torch.cat([x, ranges], dim=1)
-        x = self.conv1(self.padding(roi_features))
+        roi_disp_vol = create_disp_vol(config, disp, rois, self.pool_size)
+        roi_features = torch.cat([x, ranges, roi_disp_vol], dim=1)
+        # roi_features = torch.cat([x, ranges], dim=1)
+        # x = self.conv1(self.padding(roi_features))
+        # x = self.bn1(x)
+        # x = self.conv1b(x)
+        # x = self.bn1b(x)
+        x = self.conv1(roi_features)
         x = self.bn1(x)
-        x = self.conv1b(x)
-        x = self.bn1b(x)
         x = self.relu(x)
         x = self.conv2(x)
         x = self.bn2(x)
@@ -1217,12 +1221,14 @@ class Mask(nn.Module):
         self.bn6_sup = nn.BatchNorm2d(256, eps=0.001)
         self.conv7_sup = nn.Conv2d(256, 1, kernel_size=5, stride=1)
 
-    def forward(self, x, rois, pool_features=True):
+    def forward(self, x, rois, config, disp, pool_features=True):
         if pool_features:
             roi_features = pyramid_roi_align([rois] + x, self.pool_size, self.image_shape)
         else:
             roi_features = x
             pass
+        roi_disp_vol = create_disp_vol(config, disp, rois, self.pool_size)
+        roi_features = torch.cat([roi_features, roi_disp_vol], dim=1)
         x = self.conv1(self.padding(roi_features))
         x = self.bn1(x)
         x = self.relu(x)
@@ -1855,8 +1861,8 @@ class MaskRCNN(nn.Module):
             self.anchors = self.anchors.cuda()
 
         ## RPN
-        self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256 + config.MAXDISP)
-        # self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256)
+        # self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256 + config.MAXDISP)
+        self.rpn = RPN(len(config.RPN_ANCHOR_RATIOS), config.RPN_ANCHOR_STRIDE, 256)
 
         ## Coordinate feature
         self.coordinates = nn.Conv2d(3, 64, kernel_size=1, stride=1)
@@ -2120,69 +2126,69 @@ class MaskRCNN(nn.Module):
         rpn_feature_maps = [p2_out, p3_out, p4_out, p5_out, p6_out]
         mrcnn_feature_maps = [p2_out, p3_out, p4_out, p5_out]
 
-        # TODO Checking disp features
+        # # TODO Checking disp features
         gt_depth = input[7].unsqueeze(1)
         camera = input[6]
         fx = camera[0]
         gt_disp = fx * torch.tensor(self.config.BASELINE, dtype=torch.float, device=gt_depth.device, requires_grad=False) / \
                         torch.clamp(gt_depth, min=1.0e-4)
         gt_disp = torch.clamp(gt_disp, min=0.0, max=self.config.MAXDISP - 1)
-        if writer is not None:
-            writer.add_image('disp_feat/image',
-                             torch.clamp(unmold_image_torch(molded_images, self.config), min=0, max=255).squeeze(0),
-                             dataformats='CHW')
-
-        h_max = rpn_feature_maps[0].shape[2]
-        w_max = rpn_feature_maps[0].shape[3]
-        cur_disp = torch.nn.functional.interpolate(gt_disp,
-                                                   size=(h_max, w_max),
-                                                   mode='bilinear').view(-1, h_max, w_max, 1)
-        cur_disp = torch.clamp(cur_disp, min=0.0, max=self.config.MAXDISP - 1)
-        disp_vol = torch.zeros((1, h_max, w_max, self.config.MAXDISP),
-                               dtype=torch.float, device=cur_disp.device, requires_grad=False)
-
-        cur_disp_low = cur_disp.floor().to(torch.long)
-        cur_disp_high = cur_disp.ceil().to(torch.long)
-        mask = cur_disp_high < self.config.MAXDISP
-
-        # urange = torch.arange(w, dtype=torch.long, requires_grad=False).cuda().reshape(1, -1).repeat(h, 1)
-        # vrange = torch.arange(h, dtype=torch.long, requires_grad=False).cuda().reshape(-1, 1).repeat(1, w)
-        # ind = torch.stack([torch.zeros_like(cur_disp_low).cuda(),
-        #                    cur_disp_low,
-        #                    vrange.expand_as(cur_disp_low),
-        #                    urange.expand_as(cur_disp_low)],
-        #                   dim=-1)
-        mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, device=cur_disp.device, requires_grad=False)
-        mask_vol.scatter_(-1, cur_disp_low.clamp(max=self.config.MAXDISP - 1), mask)
-        disp_vol[mask_vol] = 1.0 - (cur_disp[mask] - cur_disp_low[mask])
-
-        mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, device=cur_disp.device, requires_grad=False)
-        mask_vol.scatter_(-1, cur_disp_high.clamp(max=self.config.MAXDISP - 1), mask)
-        disp_vol[mask_vol] = 1.0 - (cur_disp_high[mask] - cur_disp[mask])
-
-        # move disp dimension (3) to 1
-        disp_vol = disp_vol.transpose(0, 3).squeeze(-1).unsqueeze(0)
-        disp_feat = self.disp(disp_vol)
-
-        if writer is not None:
-            pred = disparityregression(self.config.MAXDISP)(disp_vol)
-            min_d = pred.min()
-            max_d = pred.max()
-            writer.add_image('disp_feat/disp_est', (pred.squeeze(0) - min_d) / (max_d - min_d), dataformats='HW')
-            writer.add_image('disp_feat/disp_gt', (cur_disp.squeeze(0).squeeze(-1) - min_d) / (max_d - min_d),
-                             dataformats='HW')
-
-        for stage in range(2, 7):
-            h = rpn_feature_maps[stage-2].shape[2]
-            w = rpn_feature_maps[stage-2].shape[3]
-
-            cur_disp_feat = torch.nn.functional.interpolate(disp_feat,
-                                                           size=(h, w),
-                                                           mode='bilinear')
-
-            rpn_feature_maps[stage-2] = torch.cat([rpn_feature_maps[stage-2], cur_disp_feat], dim=1)
-            if stage < 6:
-                mrcnn_feature_maps[stage-2] = torch.cat([mrcnn_feature_maps[stage-2], cur_disp_feat], dim=1)
+        # if writer is not None:
+        #     writer.add_image('disp_feat/image',
+        #                      torch.clamp(unmold_image_torch(molded_images, self.config), min=0, max=255).squeeze(0),
+        #                      dataformats='CHW')
+        #
+        # h_max = rpn_feature_maps[0].shape[2]
+        # w_max = rpn_feature_maps[0].shape[3]
+        # cur_disp = torch.nn.functional.interpolate(gt_disp,
+        #                                            size=(h_max, w_max),
+        #                                            mode='bilinear').view(-1, h_max, w_max, 1)
+        # cur_disp = torch.clamp(cur_disp, min=0.0, max=self.config.MAXDISP - 1)
+        # disp_vol = torch.zeros((1, h_max, w_max, self.config.MAXDISP),
+        #                        dtype=torch.float, device=cur_disp.device, requires_grad=False)
+        #
+        # cur_disp_low = cur_disp.floor().to(torch.long)
+        # cur_disp_high = cur_disp.ceil().to(torch.long)
+        # mask = cur_disp_high < self.config.MAXDISP
+        #
+        # # urange = torch.arange(w, dtype=torch.long, requires_grad=False).cuda().reshape(1, -1).repeat(h, 1)
+        # # vrange = torch.arange(h, dtype=torch.long, requires_grad=False).cuda().reshape(-1, 1).repeat(1, w)
+        # # ind = torch.stack([torch.zeros_like(cur_disp_low).cuda(),
+        # #                    cur_disp_low,
+        # #                    vrange.expand_as(cur_disp_low),
+        # #                    urange.expand_as(cur_disp_low)],
+        # #                   dim=-1)
+        # mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, device=cur_disp.device, requires_grad=False)
+        # mask_vol.scatter_(-1, cur_disp_low.clamp(max=self.config.MAXDISP - 1), mask)
+        # disp_vol[mask_vol] = 1.0 - (cur_disp[mask] - cur_disp_low[mask])
+        #
+        # mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, device=cur_disp.device, requires_grad=False)
+        # mask_vol.scatter_(-1, cur_disp_high.clamp(max=self.config.MAXDISP - 1), mask)
+        # disp_vol[mask_vol] = 1.0 - (cur_disp_high[mask] - cur_disp[mask])
+        #
+        # # move disp dimension (3) to 1
+        # disp_vol = disp_vol.transpose(0, 3).squeeze(-1).unsqueeze(0)
+        # disp_feat = self.disp(disp_vol)
+        #
+        # if writer is not None:
+        #     pred = disparityregression(self.config.MAXDISP)(disp_vol)
+        #     min_d = pred.min()
+        #     max_d = pred.max()
+        #     writer.add_image('disp_feat/disp_est', (pred.squeeze(0) - min_d) / (max_d - min_d), dataformats='HW')
+        #     writer.add_image('disp_feat/disp_gt', (cur_disp.squeeze(0).squeeze(-1) - min_d) / (max_d - min_d),
+        #                      dataformats='HW')
+        #
+        # for stage in range(2, 7):
+        #     h = rpn_feature_maps[stage-2].shape[2]
+        #     w = rpn_feature_maps[stage-2].shape[3]
+        #
+        #     cur_disp_feat = torch.nn.functional.interpolate(disp_feat,
+        #                                                    size=(h, w),
+        #                                                    mode='bilinear')
+        #
+        #     rpn_feature_maps[stage-2] = torch.cat([rpn_feature_maps[stage-2], cur_disp_feat], dim=1)
+        #     if stage < 6:
+        #         mrcnn_feature_maps[stage-2] = torch.cat([mrcnn_feature_maps[stage-2], cur_disp_feat], dim=1)
 
         feature_maps = [feature_map for index, feature_map in enumerate(rpn_feature_maps[::-1])]
         if self.config.PREDICT_DEPTH:
@@ -2207,7 +2213,8 @@ class MaskRCNN(nn.Module):
                     writer.add_image('disp/feat_r', (p2_out_r[0, 0] - min_r)/(max_r - min_r), dataformats='HW')
             else:
                 # depth_np = self.depth(feature_maps)
-                disp_np = disparityregression(self.config.MAXDISP)(disp_vol)[:, None, :, :]
+                # disp_np = disparityregression(self.config.MAXDISP)(disp_vol)[:, None, :, :]
+                disp_np = gt_disp
                 depth_np = 100.0 / torch.clamp(disp_np, min=1.0)
                 depth_np[:, :, :20, :] = 0.0
                 depth_np[:, :, -20:, :] = 0.0
@@ -2367,9 +2374,9 @@ class MaskRCNN(nn.Module):
             else:
                 ## Network Heads
                 ## Proposal classifier and BBox regressor heads
-                mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_parameters, roi_features = self.classifier(mrcnn_feature_maps, rois, ranges_feat, pool_features=True)
+                mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_parameters, roi_features = self.classifier(mrcnn_feature_maps, rois, ranges_feat, self.config, disp_np, pool_features=True)
                 ## Create masks for detections
-                mrcnn_mask, mrcnn_support, _ = self.mask(mrcnn_feature_maps, rois)
+                mrcnn_mask, mrcnn_support, _ = self.mask(mrcnn_feature_maps, rois, self.config, disp_np)
                 pass
 
             h, w = self.config.IMAGE_SHAPE[:2]
@@ -2379,7 +2386,7 @@ class MaskRCNN(nn.Module):
 
             if use_refinement:
                 [mrcnn_class_logits_final, mrcnn_class_final, mrcnn_bbox_final, mrcnn_parameters_final,
-                 roi_features] = self.classifier(mrcnn_feature_maps, rpn_rois[0], ranges_feat, pool_features=True)
+                 roi_features] = self.classifier(mrcnn_feature_maps, rpn_rois[0], ranges_feat, self.config, disp_np, pool_features=True)
 
                 ## Add back batch dimension
                 ## Create masks for detections
@@ -2389,7 +2396,7 @@ class MaskRCNN(nn.Module):
                 if len(detections) > 0:                
                     detection_boxes = detections[:, :4] / scale                
                     detection_boxes = detection_boxes.unsqueeze(0)
-                    detection_masks, detection_support, _ = self.mask(mrcnn_feature_maps, detection_boxes)
+                    detection_masks, detection_support, _ = self.mask(mrcnn_feature_maps, detection_boxes, self.config, disp_np)
                     roi_features = roi_features[indices]
                     pass
             else:
@@ -2403,7 +2410,7 @@ class MaskRCNN(nn.Module):
                 if len(detections) > 0:
                     detection_boxes = detections[:, :4] / scale
                     detection_boxes = detection_boxes.unsqueeze(0)              
-                    detection_masks, detection_support, _ = self.mask(mrcnn_feature_maps, detection_boxes)
+                    detection_masks, detection_support, _ = self.mask(mrcnn_feature_maps, detection_boxes, self.config, disp_np)
                     roi_features = roi_features[indices]                    
                     pass
                 pass

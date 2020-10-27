@@ -115,8 +115,9 @@ class PlaneRCNNDetector():
 
         if self.config.PREDICT_STEREO:
             [rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
-             target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks,
-             detection_support, detection_gt_class_ids, detection_gt_parameters, detection_gt_masks, rpn_rois, roi_features, roi_indices,
+             target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, target_support, mrcnn_support,
+             detections, detection_masks, detection_support, detection_gt_class_ids, detection_gt_parameters,
+             detection_gt_masks, rpn_rois, roi_features, roi_indices,
              depth_np_pred, disp1_np_pred] = self.model.predict(
                     [input_pair[0]['image'], input_pair[0]['image_meta'], input_pair[0]['class_ids'],
                      input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
@@ -125,8 +126,9 @@ class PlaneRCNNDetector():
                     mode='training_detection', use_nms=2, use_refinement=True)
         else:
             [rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
-             target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks,
-             detection_support, detection_gt_class_ids, detection_gt_parameters, detection_gt_masks, rpn_rois, roi_features, roi_indices,
+             target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, target_support, mrcnn_support,
+             detections, detection_masks, detection_support, detection_gt_class_ids, detection_gt_parameters,
+             detection_gt_masks, rpn_rois, roi_features, roi_indices,
              depth_np_pred] = self.model.predict(
                     [input_pair[0]['image'], input_pair[0]['image_meta'], input_pair[0]['class_ids'],
                      input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
