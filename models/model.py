@@ -1154,11 +1154,28 @@ class Classifier(nn.Module):
             self.linear_parameters = nn.Linear(1024, num_classes * self.num_parameters)
             pass
 
-    def forward(self, x, rois, ranges, config, disp, pool_features=True, gt=None):
+    def forward(self, x, rois, ranges, config, disp, pool_features=True, gt=None, writer=None):
         x = pyramid_roi_align([rois] + x, self.pool_size, self.image_shape)
         ranges = coordinates_roi([rois] + [ranges, ], self.pool_size, self.image_shape)
-        roi_disp_vol = create_disp_vol(config, disp, rois, self.pool_size)
-        roi_features = torch.cat([x, ranges, roi_disp_vol], dim=1)
+        # roi_disp_vol = create_disp_vol(config, disp, rois, self.pool_size)
+        # roi_features = torch.cat([x, ranges, roi_disp_vol], dim=1)
+        # if writer is not None:
+        #     for r in range(min(10, rois.shape[0])):
+        #         pred = disparityregression(config.MAXDISP)(roi_disp_vol[r: r+1])
+        #         min_d = pred.min()
+        #         max_d = pred.max()
+        #         disp_im = disp.cpu().detach().numpy().squeeze()
+        #         disp_im = (disp_im - float(min_d)) / float(max_d - min_d)
+        #         disp_im = cv2.cvtColor(disp_im, cv2.COLOR_GRAY2RGB)
+        #         disp_im = (disp_im*255).astype(np.uint8)
+        #         pt1 = [int(rois[r, 1]*640), int(rois[r, 0]*640)]
+        #         pt2 = [int(rois[r, 3]*640), int(rois[r, 2]*640)]
+        #         cv2.rectangle(disp_im, (pt1[0], pt1[1]), (pt2[0], pt2[1]), (255, 0, 0), 2)
+        #
+        #         writer.add_image('disp_feat/disp_%02d_est' % r, (pred.squeeze(0) - min_d) / (max_d - min_d), dataformats='HW')
+        #         writer.add_image('disp_feat/disp_%02d_bbox' % r, disp_im, dataformats='HWC')
+        #     writer.flush()
+        roi_features = torch.cat([x, ranges], dim=1)
         # roi_features = torch.cat([x, ranges], dim=1)
         # x = self.conv1(self.padding(roi_features))
         # x = self.bn1(x)
@@ -1221,14 +1238,30 @@ class Mask(nn.Module):
         self.bn6_sup = nn.BatchNorm2d(256, eps=0.001)
         self.conv7_sup = nn.Conv2d(256, 1, kernel_size=5, stride=1)
 
-    def forward(self, x, rois, config, disp, pool_features=True):
+    def forward(self, x, rois, config, disp, pool_features=True, writer=None):
         if pool_features:
             roi_features = pyramid_roi_align([rois] + x, self.pool_size, self.image_shape)
         else:
             roi_features = x
             pass
-        roi_disp_vol = create_disp_vol(config, disp, rois, self.pool_size)
-        roi_features = torch.cat([roi_features, roi_disp_vol], dim=1)
+        # roi_disp_vol = create_disp_vol(config, disp, rois, self.pool_size)
+        # roi_features = torch.cat([roi_features, roi_disp_vol], dim=1)
+        # if writer is not None:
+        #     for r in range(min(10, rois.shape[0])):
+        #         pred = disparityregression(config.MAXDISP)(roi_disp_vol[r: r+1])
+        #         min_d = pred.min()
+        #         max_d = pred.max()
+        #         disp_im = disp.cpu().detach().numpy().squeeze()
+        #         disp_im = (disp_im - float(min_d)) / float(max_d - min_d)
+        #         disp_im = cv2.cvtColor(disp_im, cv2.COLOR_GRAY2RGB)
+        #         disp_im = (disp_im*255).astype(np.uint8)
+        #         pt1 = [int(rois[r, 1]*640), int(rois[r, 0]*640)]
+        #         pt2 = [int(rois[r, 3]*640), int(rois[r, 2]*640)]
+        #         cv2.rectangle(disp_im, (pt1[0], pt1[1]), (pt2[0], pt2[1]), (255, 0, 0), 2)
+        #
+        #         writer.add_image('disp_feat/disp_%02d_est' % r, (pred.squeeze(0) - min_d) / (max_d - min_d), dataformats='HW')
+        #         writer.add_image('disp_feat/disp_%02d_bbox' % r, disp_im, dataformats='HWC')
+        #     writer.flush()
         x = self.conv1(self.padding(roi_features))
         x = self.bn1(x)
         x = self.relu(x)
@@ -1267,8 +1300,8 @@ class disparityregression(nn.Module):
         self.disp = Variable(torch.Tensor(np.reshape(np.array(range(maxdisp)),[1,maxdisp,1,1])).cuda(), requires_grad=False)
 
     def forward(self, x):
-        disp = self.disp.repeat(x.size()[0],1,x.size()[2],x.size()[3])
-        out = torch.sum(x*disp,1)
+        disp = self.disp.repeat(x.size()[0], 1, x.size()[2], x.size()[3])
+        out = torch.sum(x*disp, 1)
         return out
 
 
@@ -1843,7 +1876,8 @@ class MaskRCNN(nn.Module):
         ## Bottom-up Layers
         ## Returns a list of the last layers of each stage, 5 in total.
         ## Don't create the thead (stage 5), so we pick the 4th item in the list.
-        resnet = ResNet("resnet101", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
+        # resnet = ResNet("resnet101", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
+        resnet = ResNet("resnet101", stage5=True, numInputChannels=4)
         # resnet = ResNet("resnet50", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
         C1, C2, C3, C4, C5 = resnet.stages()
 
@@ -1885,12 +1919,12 @@ class MaskRCNN(nn.Module):
 
         ## FPN Classifier
         self.debug = False
-        self.classifier = Classifier(256 + config.MAXDISP, config.POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES, config.NUM_PARAMETERS, debug=self.debug)
-        # self.classifier = Classifier(256, config.POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES, config.NUM_PARAMETERS, debug=self.debug)
+        # self.classifier = Classifier(256 + config.MAXDISP, config.POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES, config.NUM_PARAMETERS, debug=self.debug)
+        self.classifier = Classifier(256, config.POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES, config.NUM_PARAMETERS, debug=self.debug)
 
         ## FPN Mask
-        self.mask = Mask(config, 256 + config.MAXDISP, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
-        # self.mask = Mask(config, 256, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
+        # self.mask = Mask(config, 256 + config.MAXDISP, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
+        self.mask = Mask(config, 256, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
 
         if self.config.PREDICT_DEPTH:
             if self.config.PREDICT_STEREO:
@@ -2030,7 +2064,7 @@ class MaskRCNN(nn.Module):
                                   and 'classifier.linear_bbox' not in k
                                   and 'mask.conv5' not in k
                                   and 'mask.conv1' not in k
-                                  # and 'fpn.C1.0' not in k
+                                  and 'fpn.C1.0' not in k
                                   and 'classifier.conv1' not in k
                                   and 'classifier.bn1' not in k
                                   and 'rpn.conv_shared' not in k
@@ -2107,6 +2141,17 @@ class MaskRCNN(nn.Module):
         molded_images = input[0]
         image_metas = input[1]
 
+        # TODO Checking disp features
+        gt_depth = input[7].unsqueeze(1)
+        camera = input[6]
+        fx = camera[0]
+        gt_disp = fx * torch.tensor(self.config.BASELINE, dtype=torch.float, device=gt_depth.device, requires_grad=False) / \
+                        torch.clamp(gt_depth, min=1.0e-4)
+        gt_disp = torch.clamp(gt_disp, min=0.0, max=self.config.MAXDISP - 1)
+
+        # remove mean value
+        molded_images = torch.cat([molded_images, gt_disp - 15.0], dim=1)
+
         if mode == 'inference':
             self.eval()
         elif 'training' in mode:
@@ -2127,12 +2172,6 @@ class MaskRCNN(nn.Module):
         mrcnn_feature_maps = [p2_out, p3_out, p4_out, p5_out]
 
         # # TODO Checking disp features
-        gt_depth = input[7].unsqueeze(1)
-        camera = input[6]
-        fx = camera[0]
-        gt_disp = fx * torch.tensor(self.config.BASELINE, dtype=torch.float, device=gt_depth.device, requires_grad=False) / \
-                        torch.clamp(gt_depth, min=1.0e-4)
-        gt_disp = torch.clamp(gt_disp, min=0.0, max=self.config.MAXDISP - 1)
         # if writer is not None:
         #     writer.add_image('disp_feat/image',
         #                      torch.clamp(unmold_image_torch(molded_images, self.config), min=0, max=255).squeeze(0),
@@ -2374,9 +2413,10 @@ class MaskRCNN(nn.Module):
             else:
                 ## Network Heads
                 ## Proposal classifier and BBox regressor heads
-                mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_parameters, roi_features = self.classifier(mrcnn_feature_maps, rois, ranges_feat, self.config, disp_np, pool_features=True)
+                [mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_parameters, roi_features] = self.classifier(
+                    mrcnn_feature_maps, rois, ranges_feat, self.config, disp_np, pool_features=True, writer=writer)
                 ## Create masks for detections
-                mrcnn_mask, mrcnn_support, _ = self.mask(mrcnn_feature_maps, rois, self.config, disp_np)
+                mrcnn_mask, mrcnn_support, _ = self.mask(mrcnn_feature_maps, rois, self.config, disp_np, writer=writer)
                 pass
 
             h, w = self.config.IMAGE_SHAPE[:2]
@@ -2386,7 +2426,8 @@ class MaskRCNN(nn.Module):
 
             if use_refinement:
                 [mrcnn_class_logits_final, mrcnn_class_final, mrcnn_bbox_final, mrcnn_parameters_final,
-                 roi_features] = self.classifier(mrcnn_feature_maps, rpn_rois[0], ranges_feat, self.config, disp_np, pool_features=True)
+                 roi_features] = self.classifier(mrcnn_feature_maps, rpn_rois[0], ranges_feat, self.config, disp_np,
+                                                 pool_features=True)
 
                 ## Add back batch dimension
                 ## Create masks for detections
@@ -2396,7 +2437,8 @@ class MaskRCNN(nn.Module):
                 if len(detections) > 0:                
                     detection_boxes = detections[:, :4] / scale                
                     detection_boxes = detection_boxes.unsqueeze(0)
-                    detection_masks, detection_support, _ = self.mask(mrcnn_feature_maps, detection_boxes, self.config, disp_np)
+                    detection_masks, detection_support, _ = self.mask(mrcnn_feature_maps, detection_boxes, self.config,
+                                                                      disp_np, writer=writer)
                     roi_features = roi_features[indices]
                     pass
             else:
@@ -2409,8 +2451,9 @@ class MaskRCNN(nn.Module):
 
                 if len(detections) > 0:
                     detection_boxes = detections[:, :4] / scale
-                    detection_boxes = detection_boxes.unsqueeze(0)              
-                    detection_masks, detection_support, _ = self.mask(mrcnn_feature_maps, detection_boxes, self.config, disp_np)
+                    detection_boxes = detection_boxes.unsqueeze(0)
+                    detection_masks, detection_support, _ = self.mask(mrcnn_feature_maps, detection_boxes, self.config,
+                                                                      disp_np, writer=writer)
                     roi_features = roi_features[indices]                    
                     pass
                 pass

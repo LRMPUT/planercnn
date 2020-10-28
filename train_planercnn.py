@@ -56,7 +56,7 @@ def train(options):
 
     print('the number of images', len(dataset))
 
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
     # dataloader_test = DataLoader(dataset_test, batch_size=1, shuffle=True)
 
     model = MaskRCNN(config)
@@ -167,7 +167,7 @@ def train(options):
                          input_pair[0]['camera'],
                          input_pair[1]['image']],
                         mode='training_detection', use_nms=2, use_refinement=False,
-                        return_feature_map=True, writer=writer if sampleIndex % 100 == 0 else None)
+                        return_feature_map=True)
             else:
                 [rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
                  target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, target_support, mrcnn_support,
@@ -177,7 +177,7 @@ def train(options):
                          input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
                          input_pair[0]['camera'], input_pair[0]['depth']],
                         mode='training_detection', use_nms=2, use_refinement=False,
-                        return_feature_map=True)
+                        return_feature_map=True, writer=writer)
 
             [rpn_class_loss, rpn_bbox_loss, mrcnn_class_loss, mrcnn_bbox_loss, mrcnn_mask_loss,
              mrcnn_parameter_loss, mrcnn_support_loss] = compute_losses(
@@ -228,29 +228,29 @@ def train(options):
 
                     normal_np_pred = None
 
-                    if writer is not None and sampleIndex % 100 == 0:
-                        writer.add_scalar('disp/disp_np_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
-
-                        disp_scale = 192.0
-                        writer.add_image('disp/image_left', unmold_image_torch(input_pair[0]['image'].squeeze(0), config), dataformats='CHW')
-                        writer.add_image('disp/image_right', unmold_image_torch(input_pair[1]['image'].squeeze(0), config), dataformats='CHW')
-                        # up to 15 m
-                        writer.add_image('disp/gt_depth', gt_depth.squeeze(0) / 15.0, dataformats='HW')
-                        writer.add_image('disp/gt_disp', gt_disp.squeeze(0) / disp_scale, dataformats='HW')
-                        writer.add_image('disp/disp1', disp1_np_pred.squeeze(0) / disp_scale, dataformats='HW')
-                        # writer.add_image('disp/disp2', disp2_np_pred.squeeze(0) / disp_scale, dataformats='HW')
-                        # writer.add_image('disp/disp3', disp3_np_pred.squeeze(0) / disp_scale, dataformats='HW')
-                        writer.add_image('disp/mask', mask.squeeze(0), dataformats='HW')
-                        writer.add_image('disp/error',
-                                         torch.clamp(F.smooth_l1_loss(disp1_np_pred.squeeze(0),
-                                                                      gt_disp.squeeze(0),
-                                                                      reduction='none'), max=10.0) / 10.0,
-                                         dataformats='HW')
+                    # if writer is not None and sampleIndex % 100 == 0:
+                    #     writer.add_scalar('disp/disp_np_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
+                    #
+                    #     disp_scale = 192.0
+                    #     writer.add_image('disp/image_left', unmold_image_torch(input_pair[0]['image'].squeeze(0), config), dataformats='CHW')
+                    #     writer.add_image('disp/image_right', unmold_image_torch(input_pair[1]['image'].squeeze(0), config), dataformats='CHW')
+                    #     # up to 15 m
+                    #     writer.add_image('disp/gt_depth', gt_depth.squeeze(0) / 15.0, dataformats='HW')
+                    #     writer.add_image('disp/gt_disp', gt_disp.squeeze(0) / disp_scale, dataformats='HW')
+                    #     writer.add_image('disp/disp1', disp1_np_pred.squeeze(0) / disp_scale, dataformats='HW')
+                    #     # writer.add_image('disp/disp2', disp2_np_pred.squeeze(0) / disp_scale, dataformats='HW')
+                    #     # writer.add_image('disp/disp3', disp3_np_pred.squeeze(0) / disp_scale, dataformats='HW')
+                    #     writer.add_image('disp/mask', mask.squeeze(0), dataformats='HW')
+                    #     writer.add_image('disp/error',
+                    #                      torch.clamp(F.smooth_l1_loss(disp1_np_pred.squeeze(0),
+                    #                                                   gt_disp.squeeze(0),
+                    #                                                   reduction='none'), max=10.0) / 10.0,
+                    #                      dataformats='HW')
                 else:
                     depth_np_loss = l1LossMask(depth_np_pred[:, 80:560], gt_depth[:, 80:560], (gt_depth[:, 80:560] > 1e-4).float())
                     losses.append(depth_np_loss)
-                    if writer is not None and sampleIndex % 100 == 0:
-                        writer.add_scalar('depth_np_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
+                    # if writer is not None and sampleIndex % 100 == 0:
+                    #     writer.add_scalar('depth_np_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
                     normal_np_pred = None
                     pass
 
