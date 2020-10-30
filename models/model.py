@@ -669,14 +669,24 @@ def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_param
                              requires_grad=False).squeeze(1)
             masks = torch.round(masks)
 
-            ranges = config.getRangesFull(camera).transpose(1, 2).transpose(0, 1)
             fx = camera[0]
-            ranges_rois = roi_align(ranges.view(1, 3, ranges.shape[1], ranges.shape[2]),
-                                   [positive_rois],
-                                   (config.SUPPORT_SHAPE[0], config.SUPPORT_SHAPE[1]))
-            ranges_rois = ranges_rois / ranges_rois.norm(dim=1, keepdim=True)
+            fy = camera[1]
+            cx = camera[2]
+            cy = camera[3]
+            w = camera[4]
+            h = camera[5]
+            # top left (0, 0), top right (640, 0)
+            # bottom left (0, 480), bottom right (640, 480)
+            # shape (1, 3, 2, 2)
+            ranges = torch.tensor([[[[(0.0 - cx)/fx, (w - cx)/fx],
+                                  [(0.0 - cx)/fx, (w - cx)/fx]]
+                                   [[1.0, 1.0],
+                                    [1.0, 1.0]],
+                                   [[-(0.0 - cy)/fy, -(0.0 - cy)/fy],
+                                    [-(h - cy)/fy, -(h - cy)/fy]]]], dtype=torch.float)
+            ranges = ranges / ranges.norm(dim=1, keepdim=True)
             roi_gt_planes = roi_gt_parameters / roi_gt_parameters.norm(dim=1, keepdim=True).square()
-            support = (roi_gt_planes.view(-1, 3, 1, 1) * ranges_rois).sum(dim=1) * (config.BASELINE * fx)
+            support = (roi_gt_planes.view(-1, 3, 1, 1) * ranges).sum(dim=1) * (config.BASELINE * fx)
             pass
 
         ## Threshold mask pixels at 0.5 to have GT masks be 0 or 1 to use with
@@ -2150,7 +2160,8 @@ class MaskRCNN(nn.Module):
         gt_disp = torch.clamp(gt_disp, min=0.0, max=self.config.MAXDISP - 1)
 
         # remove mean value
-        molded_images = torch.cat([molded_images, gt_disp - 15.0], dim=1)
+        # molded_images = torch.cat([molded_images, gt_disp - 15.0], dim=1)
+        molded_images = torch.cat([molded_images, gt_depth - 5.0], dim=1)
 
         if mode == 'inference':
             self.eval()
