@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import DataLoader
 import pytorch_lightning as pl
-from pytorch_lightning.profiler import AdvancedProfiler
+from pytorch_lightning.profiler import AdvancedProfiler, SimpleProfiler
 
 import os
 from tqdm import tqdm
@@ -36,15 +36,14 @@ def train(options):
     dataset_test = ScenenetRgbdDataset(options, config, split='test', random=False, load_scores=True)
     test_loader = DataLoader(dataset_test, batch_size=1, shuffle=False, num_workers=2)
 
+    # profiler = AdvancedProfiler()
+    profiler = SimpleProfiler()
     model = AnchorScores(options, config)
-    profiler = AdvancedProfiler()
     # limit_val_batches=10, val_check_interval=0,
-    trainer = pl.Trainer(gpus=1, limit_train_batches=10, max_epochs=1, profiler=profiler)
+    trainer = pl.Trainer(gpus=1, limit_train_batches=20, max_epochs=1, limit_val_batches=1, profiler=profiler)
     # trainer = pl.Trainer(gpus=1, limit_val_batches=10, val_check_interval=500,
     #                      resume_from_checkpoint='lightning_logs/version_3/checkpoints/epoch=6.ckpt')
     trainer.fit(model, train_loader, test_loader)
-
-    print(profiler.summary())
 
 
 if __name__ == '__main__':

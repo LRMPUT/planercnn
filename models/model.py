@@ -20,6 +20,9 @@ import torch.utils.data
 from torch.autograd import Variable
 import torchvision
 import pytorch_lightning as pl
+from pytorch_lightning.profiler import PassThroughProfiler
+
+from disjoint_set import DisjointSet
 
 import utils
 import cv2
@@ -679,12 +682,12 @@ def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_param
             # bottom left (0, 480), bottom right (640, 480)
             # shape (1, 3, 2, 2)
             ranges = torch.tensor([[[[(0.0 - cx)/fx, (w - cx)/fx],
-                                  [(0.0 - cx)/fx, (w - cx)/fx]]
+                                  [(0.0 - cx)/fx, (w - cx)/fx]],
                                    [[1.0, 1.0],
                                     [1.0, 1.0]],
                                    [[-(0.0 - cy)/fy, -(0.0 - cy)/fy],
-                                    [-(h - cy)/fy, -(h - cy)/fy]]]], dtype=torch.float)
-            ranges = ranges / ranges.norm(dim=1, keepdim=True)
+                                    [-(h - cy)/fy, -(h - cy)/fy]]]], dtype=torch.float, device=roi_gt_parameters.device)
+            # q dot p - 1 = 0
             roi_gt_planes = roi_gt_parameters / roi_gt_parameters.norm(dim=1, keepdim=True).square()
             support = (roi_gt_planes.view(-1, 3, 1, 1) * ranges).sum(dim=1) * (config.BASELINE * fx)
             pass
@@ -2589,13 +2592,14 @@ class MaskRCNN(nn.Module):
 
 
 class AnchorScores(pl.LightningModule):
-    def __init__(self, options, config):
+    def __init__(self, options, config, profiler=PassThroughProfiler()):
 
         super().__init__()
         self.options = options
         self.config = config
         self.build()
         self.initialize_weights()
+        self.profiler = profiler
 
         print("Loading pretrained weights ", self.options.MaskRCNNPath)
         self.load_weights(self.options.MaskRCNNPath)
@@ -2708,6 +2712,31 @@ class AnchorScores(pl.LightningModule):
             if not trainable:
                 param.requires_grad = False
 
+    @staticmethod
+    def nms_anchors(anchors, planes=None):
+        sizes = (anchors[:, 2] - anchors[:, 0]) * (anchors[:, 3] - anchors[:, 1])
+        keep, num_to_keep, _ = nms.nms(anchors,
+                                       sizes,
+                                       overlap=0.5,
+                                       top_k=400)
+        keep = keep[:num_to_keep]
+
+        anchors_nms = anchors[keep]
+        if planes is not None:
+            planes_nms = planes[keep]
+
+        return anchors_nms, planes_nms
+
+    @staticmethod
+    def find_overlaps(anchors, merge_thresh=0.4):
+        iou = calc_iou_batch(anchors)
+
+        merge_thresh = 0.4
+        overlap_idxs = torch.where(torch.max(iou, iou.transpose(0, 1)) > merge_thresh)
+        overlap_idxs = (overlap_idxs[0].cpu().numpy(), overlap_idxs[1].cpu().numpy())
+
+        return overlap_idxs
+
     def forward(self, input):
         molded_images = input[0]
 
@@ -2818,24 +2847,13 @@ class AnchorScores(pl.LightningModule):
             anchors_s = self.anchors[positive_idxs]
             # TOOD Hack to pass plane parameters
             planes_s = input_pair[0]['rpn_bbox'][0, positive_idxs]
-            sizes_s = (anchors_s[:, 2] - anchors_s[:, 0]) * (anchors_s[:, 3] - anchors_s[:, 1])
-            keep, num_to_keep, _ = nms.nms(anchors_s,
-                                           sizes_s,
-                                           overlap=0.5,
-                                           top_k=400)
-            keep = keep[:num_to_keep]
 
-            anchors_nms = anchors_s[keep]
-            planes_nms = planes_s[keep]
+            anchors_nms, planes_nms = self.nms_anchors(anchors_s, planes_s)
+
+            overlap_idxs = self.find_overlaps(anchors_nms)
 
             positive_matches = []
             negative_matches = []
-
-            iou = calc_iou_batch(anchors_nms)
-
-            merge_thresh = 0.4
-            overlap_idxs = torch.where(torch.max(iou, iou.transpose(0, 1)) > merge_thresh)
-            overlap_idxs = (overlap_idxs[0].cpu().numpy(), overlap_idxs[1].cpu().numpy())
             for i in range(overlap_idxs[0].shape[0]):
                 if overlap_idxs[0][i] != overlap_idxs[1][i]:
                     norm_dot = plane_to_plane_dot(planes_nms[overlap_idxs[0][i]],
@@ -2845,20 +2863,6 @@ class AnchorScores(pl.LightningModule):
                         positive_matches.append((overlap_idxs[0][i], overlap_idxs[1][i]))
                     else:
                         negative_matches.append((overlap_idxs[0][i], overlap_idxs[1][i]))
-
-            # for i in range(anchors_nms.shape[0]):
-            #     for j in range(i + 1, anchors_nms.shape[0]):
-            #         iou1 = calc_iou(anchors_nms[i], anchors_nms[j])
-            #         print('iou1 ', iou1, ' iou batch ', iou[i, j])
-            #         iou2 = calc_iou(anchors_nms[j], anchors_nms[i])
-            #         print('iou2 ', iou2, ' iou batch ', iou[j, i])
-            #         norm_dot = plane_to_plane_dot(planes_nms[i], planes_nms[j])
-            #         # dist = plane_to_plane_dist(planes_nms[i], planes_nms[j])
-            #         if iou1 > merge_thresh or iou2 > merge_thresh:
-            #             if norm_dot > np.cos(10.0 * np.pi / 180.0):
-            #                 positive_matches.append((i, j))
-            #             else:
-            #                 negative_matches.append((i, j))
 
             neg_ratio = 5
             sel_positive_matches = []
@@ -2921,38 +2925,92 @@ class AnchorScores(pl.LightningModule):
 
         [rpn_class_logits, rpn_probs, rpn_desc] = self([input_pair[0]['image']])
 
-        # rpn_class_loss = compute_rpn_class_loss(rpn_match, rpn_class_logits)
-        # return {'loss': rpn_class_loss, 'log': {'training_loss': rpn_class_loss}}
-
-        # target_probs = rpn_match.squeeze(0)
-        # target_probs = torch.cat([1.0 - target_probs, target_probs], dim=-1)
-        # rpn_kl_loss = F.kl_div(rpn_class_logits.squeeze(0), target_probs)
-
         rpn_target_class = torch.where(input_pair[0]['rpn_match'] > 0.9,
                                        torch.tensor(1, dtype=torch.long, requires_grad=False).cuda(),
                                        torch.tensor(0, dtype=torch.long, requires_grad=False).cuda())
         rpn_cross_loss = F.cross_entropy(rpn_class_logits.squeeze(0), rpn_target_class.squeeze(0).squeeze(-1))
 
+        positive_idxs = torch.nonzero(rpn_probs[:, 1] > 0.5)[:, 0]
+        if positive_idxs.shape[0] > 0:
+            anchors_s = self.anchors[positive_idxs]
+            # TOOD Hack to pass plane parameters
+            planes_s = input_pair[0]['rpn_bbox'][0, positive_idxs]
+
+            anchors_nms, planes_nms = self.nms_anchors(anchors_s, planes_s)
+
+            overlap_idxs = self.find_overlaps(anchors_nms)
+
+            potential_matches = []
+            for i in range(overlap_idxs[0].shape[0]):
+                if overlap_idxs[0][i] != overlap_idxs[1][i]:
+                    potential_matches.append((overlap_idxs[0][i], overlap_idxs[1][i]))
+
+            djs = DisjointSet()
+            for i in range(anchors_nms.shape[0]):
+                djs.find(i)
+            if len(potential_matches) > 0:
+                i_idxs = [i for (i, j) in potential_matches]
+                j_idxs = [j for (i, j) in potential_matches]
+                descs_i = rpn_desc[:, i_idxs, :]
+                descs_j = rpn_desc[:, j_idxs, :]
+
+                class_logits, class_prob = self.desc_dist(descs_i, descs_j)
+                for idx in range(class_prob.shape[0]):
+                    if class_prob[idx, 1] > 0.5:
+                        djs.union(i_idxs[idx], j_idxs[idx])
+
+        # drawing
         box_image = input_pair[0]['image'].cpu().numpy()
         box_image = np.ascontiguousarray(np.transpose(box_image, axes=[0, 2, 3, 1]).squeeze(0))
         box_image = unmold_image(box_image, self.config)
-        box_image_gt = box_image.copy()
+        box_image_target = box_image.copy()
         h = box_image.shape[0]
         w = box_image.shape[1]
-        for idx, anchor in enumerate(self.anchors):
+
+        positive_idxs_target = input_pair[0]['rpn_match'][:, :, 0] > 0.9
+        anchors_target = self.anchors[positive_idxs_target.squeeze(0)]
+        planes_target = input_pair[0]['rpn_bbox'][positive_idxs_target]
+        anchors_target_nms, planes_target_nms = self.nms_anchors(anchors_target, planes_target)
+        overlap_idxs_target = self.find_overlaps(anchors_target_nms)
+
+        djs_target = DisjointSet()
+        for i in range(anchors_target_nms.shape[0]):
+            djs_target.find(i)
+        for i in range(overlap_idxs_target[0].shape[0]):
+            if overlap_idxs_target[0][i] != overlap_idxs_target[1][i]:
+                norm_dot = plane_to_plane_dot(planes_target_nms[overlap_idxs_target[0][i]],
+                                              planes_target_nms[overlap_idxs_target[1][i]])
+                # dist = plane_to_plane_dist(planes_target_nms[overlap_idxs_target[0][i]],
+                #                               planes_target_nms[overlap_idxs_target[1][i]])
+                if norm_dot > np.cos(10.0 * np.pi / 180.0):
+                    djs_target.union(overlap_idxs_target[0][i], overlap_idxs_target[1][i])
+
+        color_map = ColorPalette(max(anchors_nms.shape[0], anchors_target_nms.shape[0])).getColorMap()
+        for idx, anchor in enumerate(anchors_target_nms):
             # y, x
             pt1 = [anchor[0], anchor[1] + 80]
             pt2 = [anchor[2], anchor[3] + 80]
 
-            # probability of being planar
-            if rpn_probs[0, idx, 1] > 0.5:
-                cv2.rectangle(box_image, (pt1[0], pt1[1]), (pt2[0], pt2[1]), (0, 0, 255), 2)
+            plane_set = djs_target.find(idx)
 
-            if rpn_target_class[0, idx, 0] == 1:
-                cv2.rectangle(box_image_gt, (pt1[0], pt1[1]), (pt2[0], pt2[1]), (0, 0, 255), 2)
+            cv2.rectangle(box_image_target, (pt1[0], pt1[1]), (pt2[0], pt2[1]), (int(color_map[plane_set, 0]),
+                                                                                 int(color_map[plane_set, 1]),
+                                                                                 int(color_map[plane_set, 2])), 2)
+
+        if positive_idxs.shape[0] > 0:
+            for idx, anchor in enumerate(anchors_nms):
+                # y, x
+                pt1 = [anchor[0], anchor[1] + 80]
+                pt2 = [anchor[2], anchor[3] + 80]
+
+                plane_set = djs.find(idx)
+
+                cv2.rectangle(box_image, (pt1[0], pt1[1]), (pt2[0], pt2[1]), (int(color_map[plane_set, 0]),
+                                                                              int(color_map[plane_set, 1]),
+                                                                              int(color_map[plane_set, 2])), 2)
 
         self.logger.experiment.add_image('val/boxes', box_image, dataformats='HWC', global_step=self.global_step)
-        self.logger.experiment.add_image('val/boxes_gt', box_image_gt, dataformats='HWC', global_step=self.global_step)
+        self.logger.experiment.add_image('val/boxes_target', box_image_target, dataformats='HWC', global_step=self.global_step)
 
         return {'loss': rpn_cross_loss, 'log': {'val_loss': rpn_cross_loss}}
 

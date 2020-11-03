@@ -13,14 +13,24 @@ import sys
 import utils
 
 def apply_support(config, camera, rois, support):
-    ranges = config.getRangesFull(camera).transpose(1, 2).transpose(0, 1)
     fx = camera[0]
-    ranges_rois = utils.roi_align(ranges.view(1, 3, ranges.shape[1], ranges.shape[2]),
-                            [rois],
-                            (config.SUPPORT_SHAPE[0], config.SUPPORT_SHAPE[1]))
+    fy = camera[1]
+    cx = camera[2]
+    cy = camera[3]
+    w = camera[4]
+    h = camera[5]
+    # top left (0, 0), top right (640, 0)
+    # bottom left (0, 480), bottom right (640, 480)
+    # shape (1, 3, 2, 2)
+    ranges = torch.tensor([[[[(0.0 - cx) / fx, (w - cx) / fx],
+                             [(0.0 - cx) / fx, (w - cx) / fx]],
+                            [[1.0, 1.0],
+                             [1.0, 1.0]],
+                            [[-(0.0 - cy) / fy, -(0.0 - cy) / fy],
+                             [-(h - cy) / fy, -(h - cy) / fy]]]], dtype=torch.float, device=rois.device)
     # depth from disparity
-    support = fx * config.BASELINE / torch.clamp(support, min=1.0)
-    support_pts = support[:, None, :, :] * ranges_rois
+    support_depth = fx * config.BASELINE / torch.clamp(support, min=1.0)
+    support_pts = support_depth[:, None, :, :] * ranges
     planes = torch.zeros(rois.shape[0], 3, device=rois.device)
     for r in range(rois.shape[0]):
         # (x, y, z) goes to the last dimension
@@ -31,6 +41,7 @@ def apply_support(config, camera, rois, support):
         except:
             continue
     return planes
+
 
 def unmoldDetections(config, camera, detections, detection_masks, detection_support, depth_np, unmold_masks=True, debug=False):
     """Reformats the detections of one image from the format of the neural
