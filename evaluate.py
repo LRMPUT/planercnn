@@ -17,6 +17,8 @@ import cv2
 import copy
 import glob
 
+import resource
+
 from models.model import *
 from models.refinement_net import RefineModel
 from models.modules import *
@@ -403,6 +405,9 @@ class TraditionalDetector():
 
 
 def evaluate(options):
+    # soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+    # resource.setrlimit(resource.RLIMIT_AS, (16 * 1024 * 1024 * 1024, hard))
+
     config = InferenceConfig(options)
     config.FITTING_TYPE = options.numAnchorPlanes
 

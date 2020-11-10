@@ -253,8 +253,16 @@ def evaluateMask(predMasks, gtMasks, printInfo=False):
 def evaluateMasksTensor(predMasks, gtMasks, valid_mask, printInfo=False):
     gtMasks = torch.cat([gtMasks, torch.clamp(1 - gtMasks.sum(0, keepdim=True), min=0)], dim=0)
     predMasks = torch.cat([predMasks, torch.clamp(1 - predMasks.sum(0, keepdim=True), min=0)], dim=0)
-    intersection = (gtMasks.unsqueeze(1) * predMasks * valid_mask).sum(-1).sum(-1).float()
-    union = (torch.max(gtMasks.unsqueeze(1), predMasks) * valid_mask).sum(-1).sum(-1).float()    
+    # intersection = (gtMasks.unsqueeze(1) * predMasks * valid_mask).sum(-1).sum(-1).float()
+    intersection = torch.zeros((gtMasks.shape[0], predMasks.shape[0]), dtype=float, device=gtMasks.device)
+    for m in range(gtMasks.shape[0]):
+        cur_inter = (gtMasks[m].unsqueeze(0) * predMasks * valid_mask).sum(-1).sum(-1).float()
+        intersection[m] = cur_inter
+    # union = (torch.max(gtMasks.unsqueeze(1), predMasks) * valid_mask).sum(-1).sum(-1).float()
+    union = torch.zeros((gtMasks.shape[0], predMasks.shape[0]), dtype=float, device=gtMasks.device)
+    for m in range(gtMasks.shape[0]):
+        cur_union = (torch.max(gtMasks[m].unsqueeze(0), predMasks) * valid_mask).sum(-1).sum(-1).float()
+        union[m] = cur_union
 
     N = intersection.sum()
     

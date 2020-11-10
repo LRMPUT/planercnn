@@ -190,10 +190,10 @@ def train(options):
 
             # losses += [rpn_class_loss + rpn_bbox_loss + \
             #            mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss + mrcnn_support_loss]
-            # losses += [rpn_class_loss + rpn_bbox_loss + \
-            #            mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_support_loss]
-            losses += [rpn_class_loss + rpn_bbox_loss +
-                       mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss]
+            losses += [rpn_class_loss + rpn_bbox_loss + \
+                       mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_support_loss]
+            # losses += [rpn_class_loss + rpn_bbox_loss +
+            #            mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss]
             # losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss]
             if writer is not None and sampleIndex % 100 == 0:
                 writer.add_scalar('maskrcnn_loss', losses[-1], global_step=epoch * len(dataset) + sampleIndex)
@@ -462,8 +462,14 @@ def train(options):
                 input_pair[c]['warped_depth'] = (warped_depth * valid_mask + (1 - valid_mask) * 10).squeeze()
                 continue            
             loss = sum(losses)
+            # try:
+            #     losses = [l.data.item() for l in losses]
+            # except ValueError as e:
+            #     print(e)
+            #     print(rpn_class_loss, rpn_bbox_loss, mrcnn_class_loss, mrcnn_bbox_loss, mrcnn_mask_loss, mrcnn_support_loss)
+
             losses = [l.data.item() for l in losses]
-            
+
             epoch_losses.append(losses)
             status = str(epoch + 1) + ' loss: '
             for l in losses:

@@ -12,6 +12,44 @@ from torch import nn
 import sys
 import utils
 
+
+def get_support_ranges(camera, rois):
+    fx = camera[0]
+    fy = camera[1]
+    cx = camera[2]
+    cy = camera[3]
+    w = camera[4]
+    h = camera[5]
+
+    rois_w = rois[:, 3] - rois[:, 1]
+    rois_h = rois[:, 2] - rois[:, 0]
+
+    support_x1 = (rois[:, 1] + rois_w / 4) * w
+    support_x2 = (rois[:, 1] + rois_w * 3 / 4) * w
+    support_y1 = (rois[:, 0] + rois_h / 4) * h
+    support_y2 = (rois[:, 0] + rois_h * 3 / 4) * h
+    support_ones = torch.ones_like(support_x1)
+
+    support_ranges_pt1 = torch.stack([(support_x1 - cx) / fx,
+                                      support_ones,
+                                      -(support_y1 - cy) / fy], dim=1)
+    support_ranges_pt2 = torch.stack([(support_x2 - cx) / fx,
+                                      support_ones,
+                                      -(support_y1 - cy) / fy], dim=1)
+    support_ranges_pt3 = torch.stack([(support_x1 - cx) / fx,
+                                      support_ones,
+                                      -(support_y2 - cy) / fy], dim=1)
+    support_ranges_pt4 = torch.stack([(support_x2 - cx) / fx,
+                                      support_ones,
+                                      -(support_y2 - cy) / fy], dim=1)
+
+    support_ranges = torch.stack([support_ranges_pt1,
+                                  support_ranges_pt2,
+                                  support_ranges_pt3,
+                                  support_ranges_pt4], dim=2)
+
+    return support_ranges
+
 def apply_support(config, camera, rois, support):
     fx = camera[0]
     fy = camera[1]
@@ -19,22 +57,29 @@ def apply_support(config, camera, rois, support):
     cy = camera[3]
     w = camera[4]
     h = camera[5]
+    # ranges = config.getRangesFull(camera).transpose(1, 2).transpose(0, 1)
+    # ranges_rois = utils.roi_align(ranges.view(1, 3, ranges.shape[1], ranges.shape[2]),
+    #                         [rois],
+    #                         (config.SUPPORT_SHAPE[0], config.SUPPORT_SHAPE[1]),
+    #                         sampling_ratio=1)
+    # ranges_rois = ranges_rois.view(-1, 3, config.SUPPORT_SHAPE[0] * config.SUPPORT_SHAPE[1])
+    ranges_rois = get_support_ranges(camera, rois)
     # top left (0, 0), top right (640, 0)
     # bottom left (0, 480), bottom right (640, 480)
     # shape (1, 3, 2, 2)
-    ranges = torch.tensor([[[[(0.0 - cx) / fx, (w - cx) / fx],
-                             [(0.0 - cx) / fx, (w - cx) / fx]],
-                            [[1.0, 1.0],
-                             [1.0, 1.0]],
-                            [[-(0.0 - cy) / fy, -(0.0 - cy) / fy],
-                             [-(h - cy) / fy, -(h - cy) / fy]]]], dtype=torch.float, device=rois.device)
+    # ranges = torch.tensor([[[[(0.0 - cx) / fx, (w - cx) / fx],
+    #                          [(0.0 - cx) / fx, (w - cx) / fx]],
+    #                         [[1.0, 1.0],
+    #                          [1.0, 1.0]],
+    #                         [[-(0.0 - cy) / fy, -(0.0 - cy) / fy],
+    #                          [-(h - cy) / fy, -(h - cy) / fy]]]], dtype=torch.float, device=rois.device)
     # depth from disparity
     support_depth = fx * config.BASELINE / torch.clamp(support, min=1.0)
-    support_pts = support_depth[:, None, :, :] * ranges
+    support_pts = support_depth[:, None, :] * ranges_rois
     planes = torch.zeros(rois.shape[0], 3, device=rois.device)
     for r in range(rois.shape[0]):
         # (x, y, z) goes to the last dimension
-        cur_pts = support_pts[r].transpose(0, 2).reshape(-1, 3)
+        cur_pts = support_pts[r].transpose(0, 1)
         try:
             cur_plane = utils.fit_plane_torch(cur_pts)
             planes[r] = cur_plane
