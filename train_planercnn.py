@@ -255,9 +255,26 @@ def train(options):
                     pass
 
             if len(detections) > 0:
+                # fx = camera[0]
+                # fy = camera[1]
+                # cx = camera[2]
+                # cy = camera[3]
+                # w = camera[4]
+                # h = camera[5]
+                #
+                # rois = detections[:, :4].clone()
+                # # y
+                # rois[:, [0, 2]] /= depth_np_pred.shape[1]
+                # # x
+                # rois[:, [1, 3]] /= depth_np_pred.shape[2]
+                # ranges_rois = get_support_ranges(camera, rois)
+                # roi_gt_planes = detection_gt_parameters / detection_gt_parameters.norm(dim=1, keepdim=True).square()
+                # support_gt = (roi_gt_planes.view(-1, 3, 1) * ranges_rois).sum(dim=1) * (config.BASELINE * fx)
+
                 detections, detection_masks = unmoldDetections(config, camera, detections,
                                                                  detection_masks,
                                                                  detection_support,
+                                                                 # support_gt,
                                                                  depth_np_pred,
                                                                  normal_np_pred, debug=False)
                 if 'refine_only' in options.suffix:
@@ -462,6 +479,10 @@ def train(options):
                 input_pair[c]['warped_depth'] = (warped_depth * valid_mask + (1 - valid_mask) * 10).squeeze()
                 continue            
             loss = sum(losses)
+
+            if torch.isnan(loss).any():
+                print(rpn_class_loss, rpn_bbox_loss, mrcnn_class_loss, mrcnn_bbox_loss, mrcnn_mask_loss, mrcnn_support_loss)
+                exit(-1)
             # try:
             #     losses = [l.data.item() for l in losses]
             # except ValueError as e:

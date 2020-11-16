@@ -138,6 +138,22 @@ class PlaneRCNNDetector():
                     mode='inference_detection', use_nms=2, use_refinement=True)
 
         if len(detections) > 0:
+            # fx = camera[0]
+            # fy = camera[1]
+            # cx = camera[2]
+            # cy = camera[3]
+            # w = camera[4]
+            # h = camera[5]
+            #
+            # rois = detections[:, :4].clone()
+            # # y
+            # rois[:, [0, 2]] /= depth_np_pred.shape[1]
+            # # x
+            # rois[:, [1, 3]] /= depth_np_pred.shape[2]
+            # ranges_rois = get_support_ranges(camera, rois)
+            # roi_gt_planes = detection_gt_parameters / detection_gt_parameters.norm(dim=1, keepdim=True).square()
+            # support_gt = (roi_gt_planes.view(-1, 3, 1) * ranges_rois).sum(dim=1) * (self.config.BASELINE * fx)
+
             detections, detection_masks = unmoldDetections(self.config, camera, detections,
                                                          detection_masks, detection_support,
                                                          depth_np_pred, debug=False)
