@@ -50,6 +50,7 @@ def get_support_ranges(camera, rois):
 
     return support_ranges
 
+
 def apply_support(config, camera, rois, support):
     fx = camera[0]
     fy = camera[1]

@@ -1372,7 +1372,7 @@ class PlaneParams(nn.Module):
         self.bn_vis = nn.BatchNorm1d(self.num_pts * self.num_feats, eps=0.001, momentum=0.01)
 
         # disparity and mask as input
-        self.conv_geom = nn.Conv2d(self.config.MAXDISP + num_classes,
+        self.conv_geom = nn.Conv2d(1 + num_classes,
                                    self.num_pts * self.num_feats,
                                    kernel_size=self.pool_size,
                                    stride=1)
@@ -1382,7 +1382,7 @@ class PlaneParams(nn.Module):
         self.bn1 = nn.BatchNorm1d(self.num_pts * self.num_feats, eps=0.001, momentum=0.01)
         self.lin_sup2 = nn.Linear(self.num_pts*self.num_feats, self.num_pts*self.config.MAXDISP)
 
-    def forward(self, x, rois, masks, disp_feat, ranges_feat, writer=None):
+    def forward(self, x, rois, masks, disp, ranges_feat, writer=None):
         if self.training and rois.shape[0] < 16:
             ## Set batchnorm in eval mode during training when few ROIs
             def set_bn_eval(m):
@@ -1402,7 +1402,14 @@ class PlaneParams(nn.Module):
 
         roi_feat = pyramid_roi_align([rois] + x, self.pool_size, self.image_shape)
         roi_ranges = coordinates_roi([rois] + [ranges_feat], self.pool_size, self.image_shape)
-        roi_disp = disp_roi_align([rois] + [disp_feat], self.pool_size)
+        roi_disp = disp_roi_align([rois] + [disp], self.pool_size)
+        masks_pos = masks[0, :, 1:2, :, :]
+        roi_disp_mean = torch.sum(roi_disp * masks_pos, dim=(2, 3), keepdim=True) /\
+                        torch.clamp(torch.sum(masks_pos, dim=(2, 3), keepdim=True), min=1.0)
+        roi_disp_stddev = torch.sum(((roi_disp - roi_disp_mean) * masks_pos).square(), dim=(2, 3), keepdim=True) / \
+                          torch.clamp(torch.sum(masks_pos, dim=(2, 3), keepdim=True), min=1.0)
+        roi_disp_stddev = roi_disp_stddev.sqrt()
+        roi_disp = (roi_disp - roi_disp_mean) / torch.clamp(roi_disp_stddev, min=1e-3)
 
         x_vis = torch.cat([roi_feat, roi_ranges, masks.squeeze(0)], dim=1)
         x_vis = self.conv_vis(x_vis)
@@ -1422,11 +1429,16 @@ class PlaneParams(nn.Module):
         x = self.relu(x)
         x = self.bn1(x)
         x = self.lin_sup2(x)
-        x = x.view(-1, self.config.MAXDISP, 3, 1)
+        x = x.view(-1, self.config.MAXDISP, self.num_pts, 1)
 
         pred = F.softmax(x, dim=1)
-        pred = DisparityRegression(self.maxdisp)(pred)
-        pred.view(-1, 3)
+        # range (-3, 3)
+        pred = (DisparityRegression(self.config.MAXDISP)(pred) - self.config.MAXDISP // 2) * 2 / self.config.MAXDISP * 3.0
+        pred = pred.view(-1, self.num_pts)
+        pred = pred * roi_disp_stddev.view(-1, 1) + roi_disp_mean.view(-1, 1)
+
+        # if torch.isnan(pred).any() or torch.isinf(pred).any():
+        #     print(pred)
 
         return pred
 
@@ -2604,7 +2616,7 @@ class MaskRCNN(nn.Module):
                 mrcnn_support = self.plane_params(mrcnn_feature_maps,
                                                   rois.unsqueeze(0),
                                                   target_mask_prob.unsqueeze(0),
-                                                  disp_feat,
+                                                  disp_np,
                                                   ranges_feat)
                 pass
 
@@ -2631,7 +2643,7 @@ class MaskRCNN(nn.Module):
                     detection_support = self.plane_params(mrcnn_feature_maps,
                                                           detection_boxes,
                                                           detection_masks.unsqueeze(0),
-                                                          disp_feat,
+                                                          disp_np,
                                                           ranges_feat)
                     roi_features = roi_features[indices]
                     pass
@@ -2651,7 +2663,7 @@ class MaskRCNN(nn.Module):
                     detection_support = self.plane_params(mrcnn_feature_maps,
                                                           detection_boxes,
                                                           detection_masks.unsqueeze(0),
-                                                          disp_feat,
+                                                          disp_np,
                                                           ranges_feat)
                     roi_features = roi_features[indices]                    
                     pass
