@@ -1384,6 +1384,8 @@ class PlaneParams(nn.Module):
         self.bn1 = nn.BatchNorm1d(self.num_pts * self.num_feats, eps=0.001, momentum=0.01)
         self.lin_sup2 = nn.Linear(self.num_pts*self.num_feats, self.num_pts*self.config.MAXDISP)
 
+        self.values = None
+
     def forward(self, x, rois, masks, disp, ranges_feat, writer=None, target=None, target_class=None):
         if self.training and rois.shape[0] < 16:
             ## Set batchnorm in eval mode during training when few ROIs
@@ -1410,8 +1412,8 @@ class PlaneParams(nn.Module):
                         torch.clamp(torch.sum(masks_pos, dim=(2, 3), keepdim=True), min=1.0)
         roi_disp_stddev = torch.sum(((roi_disp - roi_disp_mean) * masks_pos).square(), dim=(2, 3), keepdim=True) / \
                           torch.clamp(torch.sum(masks_pos, dim=(2, 3), keepdim=True), min=1.0)
-        roi_disp_stddev = roi_disp_stddev.sqrt()
-        roi_disp = (roi_disp - roi_disp_mean) / torch.clamp(roi_disp_stddev, min=1e-3)
+        roi_disp_stddev = torch.clamp(roi_disp_stddev.sqrt(), min=1e-3)
+        roi_disp = (roi_disp - roi_disp_mean) / roi_disp_stddev
 
         x_vis = torch.cat([roi_feat, roi_ranges, masks.squeeze(0)], dim=1)
         x_vis = self.conv_vis(x_vis)
@@ -1451,13 +1453,22 @@ class PlaneParams(nn.Module):
                 target_support_pos = target[positive_ix, :]
                 mrcnn_support_pos = pred[positive_ix, :]
 
-                loss = F.smooth_l1_loss(mrcnn_support_pos, target_support_pos)
-                if loss > 1 or torch.isnan(loss).any():
-                    print('\nsupport loss: ', loss.float())
-                    print('num rois: ', target_support_pos.shape[0])
-                    print('mean target disp: ', torch.mean(target_support_pos).float())
-                    print('stddev target disp: ', torch.std(target_support_pos).float())
-                    roi_disp_comp = disp_roi_align([rois] + [disp], self.pool_size)
+                target_norm = (target_support_pos - roi_disp_mean.view(-1, 1)) / roi_disp_stddev.view(-1, 1)
+                if self.values is None:
+                    self.values = target_norm.view(-1)
+                else:
+                    self.values = torch.cat([self.values, target_norm.view(-1)])
+
+                if writer is not None:
+                    writer.add_histogram('support_disp', self.values)
+
+                # loss = F.smooth_l1_loss(mrcnn_support_pos, target_support_pos)
+                # if loss > 1 or torch.isnan(loss).any():
+                #     print('\nsupport loss: ', loss.float())
+                #     print('num rois: ', target_support_pos.shape[0])
+                #     print('mean target disp: ', torch.mean(target_support_pos).float())
+                #     print('stddev target disp: ', torch.std(target_support_pos).float())
+                #     roi_disp_comp = disp_roi_align([rois] + [disp], self.pool_size)
 
         # if torch.isnan(pred).any() or torch.isinf(pred).any():
         #     print(pred)
