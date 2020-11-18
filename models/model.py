@@ -729,6 +729,8 @@ def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_param
             # q dot p - 1 = 0
             roi_gt_planes = roi_gt_parameters / roi_gt_parameters.norm(dim=1, keepdim=True).square()
             support = (roi_gt_planes.view(-1, 3, 1) * ranges_rois).sum(dim=1) * (config.BASELINE * fx)
+            # if (support < 0).any():
+            #     print(support)
             pass
 
         ## Threshold mask pixels at 0.5 to have GT masks be 0 or 1 to use with
@@ -1382,7 +1384,7 @@ class PlaneParams(nn.Module):
         self.bn1 = nn.BatchNorm1d(self.num_pts * self.num_feats, eps=0.001, momentum=0.01)
         self.lin_sup2 = nn.Linear(self.num_pts*self.num_feats, self.num_pts*self.config.MAXDISP)
 
-    def forward(self, x, rois, masks, disp, ranges_feat, writer=None):
+    def forward(self, x, rois, masks, disp, ranges_feat, writer=None, target=None, target_class=None):
         if self.training and rois.shape[0] < 16:
             ## Set batchnorm in eval mode during training when few ROIs
             def set_bn_eval(m):
@@ -1436,6 +1438,26 @@ class PlaneParams(nn.Module):
         pred = (DisparityRegression(self.config.MAXDISP)(pred) - self.config.MAXDISP // 2) * 2 / self.config.MAXDISP * 3.0
         pred = pred.view(-1, self.num_pts)
         pred = pred * roi_disp_stddev.view(-1, 1) + roi_disp_mean.view(-1, 1)
+
+        if target is not None and target_class is not None:
+            if (target_class > 0).sum() > 0:
+                ## Only positive ROIs contribute to the loss. And only
+                ## the class specific mask of each ROI.
+                positive_ix = torch.nonzero(target_class > 0)[:, 0]
+                # positive_class_ids = target_class_ids[positive_ix.data].long()
+                # indices = torch.stack((positive_ix, positive_class_ids), dim=1)
+
+                ## Gather the masks (predicted and true) that contribute to loss
+                target_support_pos = target[positive_ix, :]
+                mrcnn_support_pos = pred[positive_ix, :]
+
+                loss = F.smooth_l1_loss(mrcnn_support_pos, target_support_pos)
+                if loss > 1 or torch.isnan(loss).any():
+                    print('\nsupport loss: ', loss.float())
+                    print('num rois: ', target_support_pos.shape[0])
+                    print('mean target disp: ', torch.mean(target_support_pos).float())
+                    print('stddev target disp: ', torch.std(target_support_pos).float())
+                    roi_disp_comp = disp_roi_align([rois] + [disp], self.pool_size)
 
         # if torch.isnan(pred).any() or torch.isinf(pred).any():
         #     print(pred)
@@ -1981,11 +2003,11 @@ def compute_mrcnn_support_loss(target_support, mrcnn_support, target_class_ids):
         mrcnn_support_pos = mrcnn_support[positive_ix, :]
 
         loss = F.smooth_l1_loss(mrcnn_support_pos, target_support_pos)
-        # if loss > 10 or torch.isnan(loss).any():
-        # print('\nsupport loss: ', loss.float())
-        # print('num rois: ', target_support_pos.shape[0])
-        # print('mean target disp: ', torch.mean(target_support_pos).float())
-        # print('stddev target disp: ', torch.std(target_support_pos).float())
+        if loss > 1 or torch.isnan(loss).any():
+            print('\nsupport loss: ', loss.float())
+            print('num rois: ', target_support_pos.shape[0])
+            print('mean target disp: ', torch.mean(target_support_pos).float())
+            print('stddev target disp: ', torch.std(target_support_pos).float())
     else:
         loss = torch.zeros(1, dtype=torch.float, device=target_support.device)
     return loss
@@ -2617,7 +2639,9 @@ class MaskRCNN(nn.Module):
                                                   rois.unsqueeze(0),
                                                   target_mask_prob.unsqueeze(0),
                                                   disp_np,
-                                                  ranges_feat)
+                                                  ranges_feat,
+                                                  target=target_support,
+                                                  target_class=target_class_ids)
                 pass
 
             h, w = self.config.IMAGE_SHAPE[:2]

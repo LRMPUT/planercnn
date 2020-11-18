@@ -24,10 +24,11 @@ def get_support_ranges(camera, rois):
     rois_w = rois[:, 3] - rois[:, 1]
     rois_h = rois[:, 2] - rois[:, 0]
 
-    support_x1 = (rois[:, 1] + rois_w / 4) * w
-    support_x2 = (rois[:, 1] + rois_w * 3 / 4) * w
-    support_y1 = (rois[:, 0] + rois_h / 4) * h
-    support_y2 = (rois[:, 0] + rois_h * 3 / 4) * h
+    support_x1 = (rois[:, 1] + rois_w / 4) * (w - 1)
+    support_x2 = (rois[:, 1] + rois_w * 3 / 4) * (w - 1)
+    # TODO Get full image (not cropped) shape somehow else
+    support_y1 = (rois[:, 0] + rois_h / 4) * (w - 1)
+    support_y2 = (rois[:, 0] + rois_h * 3 / 4) * (w - 1)
     support_ones = torch.ones_like(support_x1)
 
     support_ranges_pt1 = torch.stack([(support_x1 - cx) / fx,

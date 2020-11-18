@@ -1465,7 +1465,7 @@ def roi_align(input, boxes, output_size, sampling_ratio=-1):
     for box in boxes:
         y1, x1, y2, x2 = box.chunk(4, dim=1)
         # convert to unnormalized coordinates in [x1, y1, x2, y2] format
-        box_pt = torch.cat([x1 * w, y1 * h, x2 * w, y2 * h], dim=1)
+        box_pt = torch.cat([x1 * (w - 1), y1 * (h - 1), x2 * (w - 1), y2 * (h - 1)], dim=1)
         boxes_pt.append(box_pt)
     return torchvision.ops.roi_align(input, boxes_pt, output_size, sampling_ratio=sampling_ratio, aligned=True)
 

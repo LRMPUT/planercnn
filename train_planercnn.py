@@ -57,6 +57,7 @@ def train(options):
     print('the number of images', len(dataset))
 
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
+    # dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
     # dataloader_test = DataLoader(dataset_test, batch_size=1, shuffle=True)
 
     model = MaskRCNN(config)
