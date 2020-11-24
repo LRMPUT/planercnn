@@ -24,33 +24,40 @@ def get_support_ranges(camera, rois):
     # cy is shifted in a padded image
     cy = cy + (w - h) / 2
 
-    rois_w = rois[:, 3] - rois[:, 1]
-    rois_h = rois[:, 2] - rois[:, 0]
+    # rois_w = rois[:, 3] - rois[:, 1]
+    # rois_h = rois[:, 2] - rois[:, 0]
+    #
+    # support_x1 = (rois[:, 1] + rois_w / 4) * (w - 1)
+    # support_x2 = (rois[:, 1] + rois_w * 3 / 4) * (w - 1)
+    # # TODO Get full image (not cropped) shape somehow else
+    # support_y1 = (rois[:, 0] + rois_h / 4) * (w - 1)
+    # support_y2 = (rois[:, 0] + rois_h * 3 / 4) * (w - 1)
+    # support_ones = torch.ones_like(support_x1)
+    #
+    # support_ranges_pt1 = torch.stack([(support_x1 - cx) / fx,
+    #                                   support_ones,
+    #                                   -(support_y1 - cy) / fy], dim=1)
+    # support_ranges_pt2 = torch.stack([(support_x2 - cx) / fx,
+    #                                   support_ones,
+    #                                   -(support_y1 - cy) / fy], dim=1)
+    # support_ranges_pt3 = torch.stack([(support_x1 - cx) / fx,
+    #                                   support_ones,
+    #                                   -(support_y2 - cy) / fy], dim=1)
+    # support_ranges_pt4 = torch.stack([(support_x2 - cx) / fx,
+    #                                   support_ones,
+    #                                   -(support_y2 - cy) / fy], dim=1)
+    #
+    # support_ranges = torch.stack([support_ranges_pt1,
+    #                               support_ranges_pt2,
+    #                               support_ranges_pt3,
+    #                               support_ranges_pt4], dim=2)
 
-    support_x1 = (rois[:, 1] + rois_w / 4) * (w - 1)
-    support_x2 = (rois[:, 1] + rois_w * 3 / 4) * (w - 1)
-    # TODO Get full image (not cropped) shape somehow else
-    support_y1 = (rois[:, 0] + rois_h / 4) * (w - 1)
-    support_y2 = (rois[:, 0] + rois_h * 3 / 4) * (w - 1)
-    support_ones = torch.ones_like(support_x1)
-
-    support_ranges_pt1 = torch.stack([(support_x1 - cx) / fx,
-                                      support_ones,
-                                      -(support_y1 - cy) / fy], dim=1)
-    support_ranges_pt2 = torch.stack([(support_x2 - cx) / fx,
-                                      support_ones,
-                                      -(support_y1 - cy) / fy], dim=1)
-    support_ranges_pt3 = torch.stack([(support_x1 - cx) / fx,
-                                      support_ones,
-                                      -(support_y2 - cy) / fy], dim=1)
-    support_ranges_pt4 = torch.stack([(support_x2 - cx) / fx,
-                                      support_ones,
-                                      -(support_y2 - cy) / fy], dim=1)
-
-    support_ranges = torch.stack([support_ranges_pt1,
-                                  support_ranges_pt2,
-                                  support_ranges_pt3,
-                                  support_ranges_pt4], dim=2)
+    support_ranges = torch.tensor([[[(0.0 - cx) / fx, (w - cx) / fx,
+                                     (0.0 - cx) / fx, (w - cx) / fx],
+                                    [1.0, 1.0,
+                                     1.0, 1.0],
+                                    [-(0.0 - cy) / fy, -(0.0 - cy) / fy,
+                                     -(w - cy) / fy, -(w - cy) / fy]]], dtype=torch.float, device=rois.device)
 
     return support_ranges
 
