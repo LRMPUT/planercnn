@@ -33,6 +33,8 @@ from config import PlaneConfig
 
 def train(options):
     cv2.setNumThreads(0)
+    # torch.manual_seed(13)
+    # np.random.seed(13)
 
     if not os.path.exists(options.checkpoint_dir):
         os.system("mkdir -p %s"%options.checkpoint_dir)
@@ -178,7 +180,7 @@ def train(options):
                          input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
                          input_pair[0]['camera'], input_pair[0]['depth']],
                         mode='training_detection', use_nms=2, use_refinement=False,
-                        return_feature_map=True, writer=writer)
+                        return_feature_map=True)
 
             [rpn_class_loss, rpn_bbox_loss, mrcnn_class_loss, mrcnn_bbox_loss, mrcnn_mask_loss,
              mrcnn_parameter_loss, mrcnn_support_loss] = compute_losses(

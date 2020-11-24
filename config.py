@@ -377,8 +377,11 @@ class Config(object):
         return ranges
 
     def getRangesFull(self, metadata):
-        urange = (self.URANGE_UNIT_F * self.METADATA[4] - self.METADATA[2]) / self.METADATA[0]
-        vrange = (self.VRANGE_UNIT_F * self.METADATA[5] - self.METADATA[3]) / self.METADATA[1]
+        # Use the biggest dimension
+        # cy is shifted in a padded image
+        cy_diff = (self.IMAGE_MAX_DIM - self.METADATA[5]) / 2
+        urange = (self.URANGE_UNIT_F * self.IMAGE_MAX_DIM - self.METADATA[2]) / self.METADATA[0]
+        vrange = (self.VRANGE_UNIT_F * self.IMAGE_MAX_DIM - self.METADATA[3] - cy_diff) / self.METADATA[1]
         ranges = torch.stack([urange, self.ONES_F, -vrange], dim=-1)
         return ranges
 

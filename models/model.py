@@ -715,7 +715,7 @@ def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_param
             #                         [positive_rois],
             #                         (config.SUPPORT_SHAPE[0], config.SUPPORT_SHAPE[1]),
             #                         sampling_ratio=1)
-            # ranges_rois = ranges_rois.view(-1, 3, config.SUPPORT_SHAPE[0] *config.SUPPORT_SHAPE[1])
+            # ranges_rois_comp = ranges_rois.view(-1, 3, config.SUPPORT_SHAPE[0] *config.SUPPORT_SHAPE[1])
             ranges_rois = get_support_ranges(camera, positive_rois)
             # top left (0, 0), top right (640, 0)
             # bottom left (0, 480), bottom right (640, 480)
@@ -728,6 +728,7 @@ def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_param
             #                         [-(h - cy)/fy, -(h - cy)/fy]]]], dtype=torch.float, device=roi_gt_parameters.device)
             # q dot p - 1 = 0
             roi_gt_planes = roi_gt_parameters / roi_gt_parameters.norm(dim=1, keepdim=True).square()
+            # roi_gt_planes = roi_gt_parameters
             support = (roi_gt_planes.view(-1, 3, 1) * ranges_rois).sum(dim=1) * (config.BASELINE * fx)
             # if (support < 0).any():
             #     print(support)
@@ -1386,7 +1387,7 @@ class PlaneParams(nn.Module):
 
         self.values = None
 
-    def forward(self, x, rois, masks, disp, ranges_feat, writer=None, target=None, target_class=None):
+    def forward(self, x, rois, masks, disp, ranges_feat, writer=None, target=None, target_class=None, target_params=None):
         if self.training and rois.shape[0] < 16:
             ## Set batchnorm in eval mode during training when few ROIs
             def set_bn_eval(m):
@@ -1412,8 +1413,8 @@ class PlaneParams(nn.Module):
                         torch.clamp(torch.sum(masks_pos, dim=(2, 3), keepdim=True), min=1.0)
         roi_disp_stddev = torch.sum(((roi_disp - roi_disp_mean) * masks_pos).square(), dim=(2, 3), keepdim=True) / \
                           torch.clamp(torch.sum(masks_pos, dim=(2, 3), keepdim=True), min=1.0)
-        roi_disp_stddev = torch.clamp(roi_disp_stddev.sqrt(), min=1e-3)
-        roi_disp = (roi_disp - roi_disp_mean) / roi_disp_stddev
+        roi_disp_stddev = torch.clamp(roi_disp_stddev.sqrt(), min=1.0)
+        roi_disp_norm = (roi_disp - roi_disp_mean) / roi_disp_stddev
 
         x_vis = torch.cat([roi_feat, roi_ranges, masks.squeeze(0)], dim=1)
         x_vis = self.conv_vis(x_vis)
@@ -1421,7 +1422,7 @@ class PlaneParams(nn.Module):
         x_vis = x_vis.view(-1, self.num_pts * self.num_feats)
         x_vis = self.bn_vis(x_vis)
 
-        x_geom = torch.cat([roi_disp, masks.squeeze(0)], dim=1)
+        x_geom = torch.cat([roi_disp_norm, masks.squeeze(0)], dim=1)
         x_geom = self.conv_geom(x_geom)
         x_geom = self.relu(x_geom)
         x_geom = x_geom.view(-1, self.num_pts*self.num_feats)
@@ -1453,22 +1454,46 @@ class PlaneParams(nn.Module):
                 target_support_pos = target[positive_ix, :]
                 mrcnn_support_pos = pred[positive_ix, :]
 
-                target_norm = (target_support_pos - roi_disp_mean.view(-1, 1)) / roi_disp_stddev.view(-1, 1)
-                if self.values is None:
-                    self.values = target_norm.view(-1)
-                else:
-                    self.values = torch.cat([self.values, target_norm.view(-1)])
+                target_norm = (target_support_pos - roi_disp_mean.view(-1, 1)[positive_ix, :]) /\
+                              roi_disp_stddev.view(-1, 1)[positive_ix, :]
+                # outlier_mask = target_norm.abs() > 20.0
+                # if outlier_mask.any():
+                #     torch.set_printoptions(precision=4, sci_mode=False)
+                #     print('\ntarget_norm = ', target_norm[outlier_mask.any(1)])
+                #     print('target_support_pos = ', target_support_pos[outlier_mask.any(1)])
+                #     print('target_params = ', target_params[positive_ix, :][outlier_mask.any(1)])
+                #     print('rois = ', rois[0, positive_ix, :][outlier_mask.any(1)])
+                #     print('roi_disp_mean = ', roi_disp_mean.view(-1, 1)[positive_ix, :][outlier_mask.any(1)])
+                #     print('roi_disp_stddev = ', roi_disp_stddev.view(-1, 1)[positive_ix, :][outlier_mask.any(1)])
+                #     torch.set_printoptions(precision=1, linewidth=180)
+                #     print('roi_disp = ', (roi_disp * masks_pos)[positive_ix, :, :, :][outlier_mask.any(1)])
+                #     print('masks_pos = ', masks_pos[positive_ix, :, :, :][outlier_mask.any(1)])
+                #     torch.set_printoptions()
+                # if self.values is None:
+                #     self.values = target_norm.view(-1)
+                # else:
+                #     max_values = 100000
+                #     self.values = torch.cat([self.values, target_norm.view(-1)])
+                #     if self.values.shape[0] > max_values:
+                #         self.values = self.values[-max_values:]
+                #
+                # if writer is not None:
+                #     writer.add_histogram('support_disp', self.values, bins=50)
 
-                if writer is not None:
-                    writer.add_histogram('support_disp', self.values)
-
-                # loss = F.smooth_l1_loss(mrcnn_support_pos, target_support_pos)
-                # if loss > 1 or torch.isnan(loss).any():
-                #     print('\nsupport loss: ', loss.float())
-                #     print('num rois: ', target_support_pos.shape[0])
-                #     print('mean target disp: ', torch.mean(target_support_pos).float())
-                #     print('stddev target disp: ', torch.std(target_support_pos).float())
-                #     roi_disp_comp = disp_roi_align([rois] + [disp], self.pool_size)
+                loss = F.smooth_l1_loss(mrcnn_support_pos, target_support_pos)
+                if loss > 0.6 or torch.isnan(loss).any():
+                    outlier_mask = target_norm.abs() > 3.0
+                    torch.set_printoptions(precision=4, sci_mode=False)
+                    print('\ntarget_norm = ', target_norm[outlier_mask.any(1)])
+                    print('target_support_pos = ', target_support_pos[outlier_mask.any(1)])
+                    print('target_params = ', target_params[positive_ix, :][outlier_mask.any(1)])
+                    print('rois = ', rois[0, positive_ix, :][outlier_mask.any(1)])
+                    print('roi_disp_mean = ', roi_disp_mean.view(-1, 1)[positive_ix, :][outlier_mask.any(1)])
+                    print('roi_disp_stddev = ', roi_disp_stddev.view(-1, 1)[positive_ix, :][outlier_mask.any(1)])
+                    torch.set_printoptions(precision=1, linewidth=180)
+                    print('roi_disp = ', (roi_disp * masks_pos)[positive_ix, :, :, :][outlier_mask.any(1)])
+                    print('masks_pos = ', masks_pos[positive_ix, :, :, :][outlier_mask.any(1)])
+                    torch.set_printoptions()
 
         # if torch.isnan(pred).any() or torch.isinf(pred).any():
         #     print(pred)
@@ -2014,11 +2039,11 @@ def compute_mrcnn_support_loss(target_support, mrcnn_support, target_class_ids):
         mrcnn_support_pos = mrcnn_support[positive_ix, :]
 
         loss = F.smooth_l1_loss(mrcnn_support_pos, target_support_pos)
-        if loss > 1 or torch.isnan(loss).any():
-            print('\nsupport loss: ', loss.float())
-            print('num rois: ', target_support_pos.shape[0])
-            print('mean target disp: ', torch.mean(target_support_pos).float())
-            print('stddev target disp: ', torch.std(target_support_pos).float())
+        # if loss > 1 or torch.isnan(loss).any():
+        #     print('\nsupport loss: ', loss.float())
+        #     print('num rois: ', target_support_pos.shape[0])
+        #     print('mean target disp: ', torch.mean(target_support_pos).float())
+        #     print('stddev target disp: ', torch.std(target_support_pos).float())
     else:
         loss = torch.zeros(1, dtype=torch.float, device=target_support.device)
     return loss
@@ -2384,51 +2409,51 @@ class MaskRCNN(nn.Module):
         rpn_feature_maps = [p2_out, p3_out, p4_out, p5_out, p6_out]
         mrcnn_feature_maps = [p2_out, p3_out, p4_out, p5_out]
 
-        # TODO Checking disp features
-        if writer is not None:
-            writer.add_image('disp_feat/image',
-                             torch.clamp(unmold_image_torch(molded_images, self.config), min=0, max=255).squeeze(0),
-                             dataformats='CHW')
-
-        h_max = rpn_feature_maps[0].shape[2]
-        w_max = rpn_feature_maps[0].shape[3]
-        cur_disp = torch.nn.functional.interpolate(gt_disp,
-                                                   size=(h_max, w_max),
-                                                   mode='bilinear').view(-1, h_max, w_max, 1)
-        cur_disp = torch.clamp(cur_disp, min=0.0, max=self.config.MAXDISP - 1)
-        disp_vol = torch.zeros((1, h_max, w_max, self.config.MAXDISP),
-                               dtype=torch.float, device=cur_disp.device, requires_grad=False)
-
-        cur_disp_low = cur_disp.floor().to(torch.long)
-        cur_disp_high = cur_disp.ceil().to(torch.long)
-        mask = cur_disp_high < self.config.MAXDISP
-
-        # urange = torch.arange(w, dtype=torch.long, requires_grad=False).cuda().reshape(1, -1).repeat(h, 1)
-        # vrange = torch.arange(h, dtype=torch.long, requires_grad=False).cuda().reshape(-1, 1).repeat(1, w)
-        # ind = torch.stack([torch.zeros_like(cur_disp_low).cuda(),
-        #                    cur_disp_low,
-        #                    vrange.expand_as(cur_disp_low),
-        #                    urange.expand_as(cur_disp_low)],
-        #                   dim=-1)
-        mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, device=cur_disp.device, requires_grad=False)
-        mask_vol.scatter_(-1, cur_disp_low.clamp(max=self.config.MAXDISP - 1), mask)
-        disp_vol[mask_vol] = 1.0 - (cur_disp[mask] - cur_disp_low[mask])
-
-        mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, device=cur_disp.device, requires_grad=False)
-        mask_vol.scatter_(-1, cur_disp_high.clamp(max=self.config.MAXDISP - 1), mask)
-        disp_vol[mask_vol] = 1.0 - (cur_disp_high[mask] - cur_disp[mask])
-
-        # move disp dimension (3) to 1
-        disp_vol = disp_vol.permute(0, 3, 2, 1)
-        disp_feat = self.disp_conv(disp_vol)
-
-        if writer is not None:
-            pred = DisparityRegression(self.config.MAXDISP)(disp_vol)
-            min_d = pred.min()
-            max_d = pred.max()
-            writer.add_image('disp_feat/disp_est', (pred.squeeze(0) - min_d) / (max_d - min_d), dataformats='HW')
-            writer.add_image('disp_feat/disp_gt', (cur_disp.squeeze(0).squeeze(-1) - min_d) / (max_d - min_d),
-                             dataformats='HW')
+        # # TODO Checking disp features
+        # if writer is not None:
+        #     writer.add_image('disp_feat/image',
+        #                      torch.clamp(unmold_image_torch(molded_images, self.config), min=0, max=255).squeeze(0),
+        #                      dataformats='CHW')
+        #
+        # h_max = rpn_feature_maps[0].shape[2]
+        # w_max = rpn_feature_maps[0].shape[3]
+        # cur_disp = torch.nn.functional.interpolate(gt_disp,
+        #                                            size=(h_max, w_max),
+        #                                            mode='bilinear').view(-1, h_max, w_max, 1)
+        # cur_disp = torch.clamp(cur_disp, min=0.0, max=self.config.MAXDISP - 1)
+        # disp_vol = torch.zeros((1, h_max, w_max, self.config.MAXDISP),
+        #                        dtype=torch.float, device=cur_disp.device, requires_grad=False)
+        #
+        # cur_disp_low = cur_disp.floor().to(torch.long)
+        # cur_disp_high = cur_disp.ceil().to(torch.long)
+        # mask = cur_disp_high < self.config.MAXDISP
+        #
+        # # urange = torch.arange(w, dtype=torch.long, requires_grad=False).cuda().reshape(1, -1).repeat(h, 1)
+        # # vrange = torch.arange(h, dtype=torch.long, requires_grad=False).cuda().reshape(-1, 1).repeat(1, w)
+        # # ind = torch.stack([torch.zeros_like(cur_disp_low).cuda(),
+        # #                    cur_disp_low,
+        # #                    vrange.expand_as(cur_disp_low),
+        # #                    urange.expand_as(cur_disp_low)],
+        # #                   dim=-1)
+        # mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, device=cur_disp.device, requires_grad=False)
+        # mask_vol.scatter_(-1, cur_disp_low.clamp(max=self.config.MAXDISP - 1), mask)
+        # disp_vol[mask_vol] = 1.0 - (cur_disp[mask] - cur_disp_low[mask])
+        #
+        # mask_vol = torch.zeros_like(disp_vol, dtype=torch.bool, device=cur_disp.device, requires_grad=False)
+        # mask_vol.scatter_(-1, cur_disp_high.clamp(max=self.config.MAXDISP - 1), mask)
+        # disp_vol[mask_vol] = 1.0 - (cur_disp_high[mask] - cur_disp[mask])
+        #
+        # # move disp dimension (3) to 1
+        # disp_vol = disp_vol.permute(0, 3, 1, 2)
+        # disp_feat = self.disp_conv(disp_vol)
+        #
+        # if writer is not None:
+        #     pred = DisparityRegression(self.config.MAXDISP)(disp_vol)
+        #     min_d = pred.min()
+        #     max_d = pred.max()
+        #     writer.add_image('disp_feat/disp_est', (pred.squeeze(0) - min_d) / (max_d - min_d), dataformats='HW')
+        #     writer.add_image('disp_feat/disp_gt', (cur_disp.squeeze(0).squeeze(-1) - min_d) / (max_d - min_d),
+        #                      dataformats='HW')
         #
         # for stage in range(2, 7):
         #     h = rpn_feature_maps[stage-2].shape[2]
@@ -2651,8 +2676,10 @@ class MaskRCNN(nn.Module):
                                                   target_mask_prob.unsqueeze(0),
                                                   disp_np,
                                                   ranges_feat,
+                                                  writer=writer,
                                                   target=target_support,
-                                                  target_class=target_class_ids)
+                                                  target_class=target_class_ids,
+                                                  target_params=target_parameters)
                 pass
 
             h, w = self.config.IMAGE_SHAPE[:2]

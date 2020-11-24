@@ -21,6 +21,9 @@ def get_support_ranges(camera, rois):
     w = camera[4]
     h = camera[5]
 
+    # cy is shifted in a padded image
+    cy = cy + (w - h) / 2
+
     rois_w = rois[:, 3] - rois[:, 1]
     rois_h = rois[:, 2] - rois[:, 0]
 
