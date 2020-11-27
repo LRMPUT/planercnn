@@ -22,7 +22,7 @@ def get_support_ranges(camera, rois):
     h = camera[5]
 
     # cy is shifted in a padded image
-    cy = cy + (w - h) / 2
+    # cy = cy + (w - h) / 2
 
     # rois_w = rois[:, 3] - rois[:, 1]
     # rois_h = rois[:, 2] - rois[:, 0]
@@ -57,7 +57,7 @@ def get_support_ranges(camera, rois):
                                     [1.0, 1.0,
                                      1.0, 1.0],
                                     [-(0.0 - cy) / fy, -(0.0 - cy) / fy,
-                                     -(w - cy) / fy, -(w - cy) / fy]]], dtype=torch.float, device=rois.device)
+                                     -(h - cy) / fy, -(h - cy) / fy]]], dtype=torch.float, device=rois.device)
 
     return support_ranges
 

@@ -817,6 +817,8 @@ def cleanSegmentation(image, planes, plane_info, segmentation, depth, camera, pl
                 newSegmentation[segmentMask] = segmentIndex
                 pass
             continue
+        if np.linalg.norm(planes[segmentIndex]) < 0.5:
+            continue
         oriArea = segmentMask.sum()
         segmentMask = np.logical_and(segmentMask, depthDiffMask[segmentIndex])
 

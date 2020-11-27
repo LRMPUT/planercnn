@@ -730,7 +730,7 @@ def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_param
             roi_gt_planes = roi_gt_parameters / roi_gt_parameters.norm(dim=1, keepdim=True).square()
             # roi_gt_planes = roi_gt_parameters
             support = (roi_gt_planes.view(-1, 3, 1) * ranges_rois).sum(dim=1) * (config.BASELINE * fx)
-            # if (support < 0).any():
+            # if (support < -191).any() or (support > 191).any():
             #     print(support)
             pass
 
@@ -1214,24 +1214,7 @@ class Classifier(nn.Module):
     def forward(self, x, rois, ranges, config, disp, pool_features=True, gt=None, writer=None):
         x = pyramid_roi_align([rois] + x, self.pool_size, self.image_shape)
         ranges = coordinates_roi([rois] + [ranges, ], self.pool_size, self.image_shape)
-        # roi_disp_vol = create_disp_vol(config, disp, rois, self.pool_size)
-        # roi_features = torch.cat([x, ranges, roi_disp_vol], dim=1)
-        # if writer is not None:
-        #     for r in range(min(10, rois.shape[0])):
-        #         pred = disparityregression(config.MAXDISP)(roi_disp_vol[r: r+1])
-        #         min_d = pred.min()
-        #         max_d = pred.max()
-        #         disp_im = disp.cpu().detach().numpy().squeeze()
-        #         disp_im = (disp_im - float(min_d)) / float(max_d - min_d)
-        #         disp_im = cv2.cvtColor(disp_im, cv2.COLOR_GRAY2RGB)
-        #         disp_im = (disp_im*255).astype(np.uint8)
-        #         pt1 = [int(rois[r, 1]*640), int(rois[r, 0]*640)]
-        #         pt2 = [int(rois[r, 3]*640), int(rois[r, 2]*640)]
-        #         cv2.rectangle(disp_im, (pt1[0], pt1[1]), (pt2[0], pt2[1]), (255, 0, 0), 2)
-        #
-        #         writer.add_image('disp_feat/disp_%02d_est' % r, (pred.squeeze(0) - min_d) / (max_d - min_d), dataformats='HW')
-        #         writer.add_image('disp_feat/disp_%02d_bbox' % r, disp_im, dataformats='HWC')
-        #     writer.flush()
+
         roi_features = torch.cat([x, ranges], dim=1)
         # roi_features = torch.cat([x, ranges], dim=1)
         # x = self.conv1(self.padding(roi_features))
@@ -1290,36 +1273,12 @@ class Mask(nn.Module):
         self.sigmoid = nn.Sigmoid()
         self.relu = nn.ReLU(inplace=True)
 
-        # self.conv5_sup = nn.Conv2d(256, 256, kernel_size=5, stride=1)
-        # self.bn5_sup = nn.BatchNorm2d(256, eps=0.001)
-        # self.conv6_sup = nn.Conv2d(256, 256, kernel_size=5, stride=1)
-        # self.bn6_sup = nn.BatchNorm2d(256, eps=0.001)
-        # self.conv7_sup = nn.Conv2d(256, 1, kernel_size=5, stride=1)
-
     def forward(self, x, rois, config, disp, pool_features=True, writer=None):
         if pool_features:
             roi_features = pyramid_roi_align([rois] + x, self.pool_size, self.image_shape)
         else:
             roi_features = x
             pass
-        # roi_disp_vol = create_disp_vol(config, disp, rois, self.pool_size)
-        # roi_features = torch.cat([roi_features, roi_disp_vol], dim=1)
-        # if writer is not None:
-        #     for r in range(min(10, rois.shape[0])):
-        #         pred = disparityregression(config.MAXDISP)(roi_disp_vol[r: r+1])
-        #         min_d = pred.min()
-        #         max_d = pred.max()
-        #         disp_im = disp.cpu().detach().numpy().squeeze()
-        #         disp_im = (disp_im - float(min_d)) / float(max_d - min_d)
-        #         disp_im = cv2.cvtColor(disp_im, cv2.COLOR_GRAY2RGB)
-        #         disp_im = (disp_im*255).astype(np.uint8)
-        #         pt1 = [int(rois[r, 1]*640), int(rois[r, 0]*640)]
-        #         pt2 = [int(rois[r, 3]*640), int(rois[r, 2]*640)]
-        #         cv2.rectangle(disp_im, (pt1[0], pt1[1]), (pt2[0], pt2[1]), (255, 0, 0), 2)
-        #
-        #         writer.add_image('disp_feat/disp_%02d_est' % r, (pred.squeeze(0) - min_d) / (max_d - min_d), dataformats='HW')
-        #         writer.add_image('disp_feat/disp_%02d_bbox' % r, disp_im, dataformats='HWC')
-        #     writer.flush()
         x = self.conv1(self.padding(roi_features))
         x = self.bn1(x)
         x = self.relu(x)
@@ -1337,13 +1296,6 @@ class Mask(nn.Module):
         x_mask = self.relu(x_mask)
         x_mask = self.conv5(x_mask)
 
-        # x_sup = self.conv5_sup(x)
-        # x_sup = self.bn5_sup(x_sup)
-        # x_sup = self.conv6_sup(x_sup)
-        # x_sup = self.bn6_sup(x_sup)
-        # x_sup = self.conv7_sup(x_sup)
-        # x_sup = x_sup.squeeze(1)
-
         if self.config.NUM_PARAMETER_CHANNELS > 0 and not self.config.OCCLUSION:
             x_mask = torch.cat([self.sigmoid(x_mask[:, :-self.num_parameter_channels]), x_mask[:, -self.num_parameter_channels:]], dim=1)
         else:
@@ -1360,8 +1312,8 @@ class PlaneParams(nn.Module):
         self.pool_size = pool_size
         self.image_shape = image_shape
         self.num_classes = num_classes
-        self.num_feats = 256
-        self.num_pts = 4
+        self.num_feats = 1024
+        self.num_pts = 1
         self.padding = SamePad2d(kernel_size=5, stride=1)
         self.padding2 = SamePad2d(kernel_size=5, stride=2)
         self.relu = nn.ReLU(inplace=True)
@@ -1383,8 +1335,8 @@ class PlaneParams(nn.Module):
 
         self.lin_sup = nn.Linear(2*self.num_pts*self.num_feats, self.num_pts*self.num_feats)
         self.bn1 = nn.BatchNorm1d(self.num_pts * self.num_feats, eps=0.001, momentum=0.01)
-        self.lin_sup_disp = nn.Linear(self.num_pts * self.num_feats, self.num_pts * self.config.MAXDISP * 2)
-        self.lin_sup_class = nn.Linear(self.num_pts * self.num_feats, self.num_pts * 2)
+        # self.lin_sup_disp = nn.Linear(self.num_pts * self.num_feats, self.num_pts * self.config.MAXDISP * 2)
+        self.lin_sup_class = nn.Linear(self.num_pts * self.num_feats, 3 * num_classes)
 
         self.values = None
 
@@ -1434,20 +1386,9 @@ class PlaneParams(nn.Module):
         x = self.lin_sup(x)
         x = self.relu(x)
         x = self.bn1(x)
-        x_disp = self.lin_sup_disp(x)
-        x_disp = x_disp.view(-1, self.config.MAXDISP, 2, self.num_pts)
 
         x_class = self.lin_sup_class(x)
-        x_class = x_class.view(-1, 2, self.num_pts)
-        # x_class_ind = torch.argmax(x_class, dim=1)
-
-        pred_class = F.softmax(x_disp, dim=1)
-        pred_class = DisparityRegression(self.config.MAXDISP)(pred_class)
-        pred_class = pred_class.view(-1, 2, self.num_pts)
-        # second class are negative disparities
-        pred_class[:, 1, :] = -pred_class[:, 1, :]
-
-        pred = torch.where(x_class[:, 0, :] > x_class[:, 1, :], pred_class[:, 0, :], pred_class[:, 1, :])
+        x_class = x_class.view(-1, self.num_classes, 3)
 
         # if target is not None and target_class is not None:
         #     if (target_class > 0).sum() > 0:
@@ -1461,51 +1402,49 @@ class PlaneParams(nn.Module):
         #         target_support_pos = target[positive_ix, :]
         #         mrcnn_support_pos = pred[positive_ix, :]
         #
-        #         target_norm = (target_support_pos - roi_disp_mean.view(-1, 1)[positive_ix, :]) /\
-        #                       roi_disp_stddev.view(-1, 1)[positive_ix, :]
-                # outlier_mask = target_norm.abs() > 20.0
-                # if outlier_mask.any():
-                #     torch.set_printoptions(precision=4, sci_mode=False)
-                #     print('\ntarget_norm = ', target_norm[outlier_mask.any(1)])
-                #     print('target_support_pos = ', target_support_pos[outlier_mask.any(1)])
-                #     print('target_params = ', target_params[positive_ix, :][outlier_mask.any(1)])
-                #     print('rois = ', rois[0, positive_ix, :][outlier_mask.any(1)])
-                #     print('roi_disp_mean = ', roi_disp_mean.view(-1, 1)[positive_ix, :][outlier_mask.any(1)])
-                #     print('roi_disp_stddev = ', roi_disp_stddev.view(-1, 1)[positive_ix, :][outlier_mask.any(1)])
-                #     torch.set_printoptions(precision=1, linewidth=180)
-                #     print('roi_disp = ', (roi_disp * masks_pos)[positive_ix, :, :, :][outlier_mask.any(1)])
-                #     print('masks_pos = ', masks_pos[positive_ix, :, :, :][outlier_mask.any(1)])
-                #     torch.set_printoptions()
-                # if self.values is None:
-                #     self.values = target_norm.view(-1)
-                # else:
-                #     max_values = 100000
-                #     self.values = torch.cat([self.values, target_norm.view(-1)])
-                #     if self.values.shape[0] > max_values:
-                #         self.values = self.values[-max_values:]
-                #
-                # if writer is not None:
-                #     writer.add_histogram('support_disp', self.values, bins=50)
-
-                # loss = F.smooth_l1_loss(mrcnn_support_pos, target_support_pos)
-                # if loss > 0.6 or torch.isnan(loss).any():
-                #     outlier_mask = target_norm.abs() > 3.0
-                #     torch.set_printoptions(precision=4, sci_mode=False)
-                #     print('\ntarget_norm = ', target_norm[outlier_mask.any(1)])
-                #     print('target_support_pos = ', target_support_pos[outlier_mask.any(1)])
-                #     print('target_params = ', target_params[positive_ix, :][outlier_mask.any(1)])
-                #     print('rois = ', rois[0, positive_ix, :][outlier_mask.any(1)])
-                #     print('roi_disp_mean = ', roi_disp_mean.view(-1, 1)[positive_ix, :][outlier_mask.any(1)])
-                #     print('roi_disp_stddev = ', roi_disp_stddev.view(-1, 1)[positive_ix, :][outlier_mask.any(1)])
-                #     torch.set_printoptions(precision=1, linewidth=180)
-                #     print('roi_disp = ', (roi_disp * masks_pos)[positive_ix, :, :, :][outlier_mask.any(1)])
-                #     print('masks_pos = ', masks_pos[positive_ix, :, :, :][outlier_mask.any(1)])
-                #     torch.set_printoptions()
+        #         # outlier_mask = target_norm.abs() > 20.0
+        #         # if outlier_mask.any():
+        #         #     torch.set_printoptions(precision=4, sci_mode=False)
+        #         #     print('\ntarget_norm = ', target_norm[outlier_mask.any(1)])
+        #         #     print('target_support_pos = ', target_support_pos[outlier_mask.any(1)])
+        #         #     print('target_params = ', target_params[positive_ix, :][outlier_mask.any(1)])
+        #         #     print('rois = ', rois[0, positive_ix, :][outlier_mask.any(1)])
+        #         #     print('roi_disp_mean = ', roi_disp_mean.view(-1, 1)[positive_ix, :][outlier_mask.any(1)])
+        #         #     print('roi_disp_stddev = ', roi_disp_stddev.view(-1, 1)[positive_ix, :][outlier_mask.any(1)])
+        #         #     torch.set_printoptions(precision=1, linewidth=180)
+        #         #     print('roi_disp = ', (roi_disp * masks_pos)[positive_ix, :, :, :][outlier_mask.any(1)])
+        #         #     print('masks_pos = ', masks_pos[positive_ix, :, :, :][outlier_mask.any(1)])
+        #         #     torch.set_printoptions()
+        #         # if self.values is None:
+        #         #     self.values = target_norm.view(-1)
+        #         # else:
+        #         #     max_values = 100000
+        #         #     self.values = torch.cat([self.values, target_norm.view(-1)])
+        #         #     if self.values.shape[0] > max_values:
+        #         #         self.values = self.values[-max_values:]
+        #         #
+        #         # if writer is not None:
+        #         #     writer.add_histogram('support_disp', self.values, bins=50)
+        #
+        #         loss = F.smooth_l1_loss(mrcnn_support_pos, target_support_pos)
+        #         if loss > 6 or torch.isnan(loss).any():
+        #             print('loss')
+        #             # torch.set_printoptions(precision=4, sci_mode=False)
+        #             # print('\ntarget_norm = ', target_norm[outlier_mask.any(1)])
+        #             # print('target_support_pos = ', target_support_pos[outlier_mask.any(1)])
+        #             # print('target_params = ', target_params[positive_ix, :][outlier_mask.any(1)])
+        #             # print('rois = ', rois[0, positive_ix, :][outlier_mask.any(1)])
+        #             # print('roi_disp_mean = ', roi_disp_mean.view(-1, 1)[positive_ix, :][outlier_mask.any(1)])
+        #             # print('roi_disp_stddev = ', roi_disp_stddev.view(-1, 1)[positive_ix, :][outlier_mask.any(1)])
+        #             # torch.set_printoptions(precision=1, linewidth=180)
+        #             # print('roi_disp = ', (roi_disp * masks_pos)[positive_ix, :, :, :][outlier_mask.any(1)])
+        #             # print('masks_pos = ', masks_pos[positive_ix, :, :, :][outlier_mask.any(1)])
+        #             # torch.set_printoptions()
 
         # if torch.isnan(pred).any() or torch.isinf(pred).any():
         #     print(pred)
 
-        return pred, pred_class, x_class
+        return x_class
 
 
 class DisparityRegression(nn.Module):
@@ -2170,7 +2109,7 @@ class MaskRCNN(nn.Module):
         # self.mask = Mask(config, 256 + config.MAXDISP, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
         self.mask = Mask(config, 256, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
 
-        self.plane_params = PlaneParams(config, 256, config.MASK_SHAPE[0], config.IMAGE_SHAPE, config.NUM_CLASSES)
+        self.plane_params = PlaneParams(config, 256, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
 
         if self.config.PREDICT_DEPTH:
             if self.config.PREDICT_STEREO:
@@ -2688,15 +2627,21 @@ class MaskRCNN(nn.Module):
                                                       target_mask.shape[2]),
                                                      dtype=torch.float,
                                                      device=target_mask.device))
-                _, mrcnn_support, mrcnn_support_class = self.plane_params(mrcnn_feature_maps,
-                                                                          rois.unsqueeze(0),
-                                                                          target_mask_prob.unsqueeze(0),
-                                                                          disp_np,
-                                                                          ranges_feat,
-                                                                          writer=writer,
-                                                                          target=target_support,
-                                                                          target_class=target_class_ids,
-                                                                          target_params=target_parameters)
+                target_mask_prob = torch.nn.functional.interpolate(target_mask_prob,
+                                                                   size=(self.config.MASK_POOL_SIZE,
+                                                                         self.config.MASK_POOL_SIZE),
+                                                                   mode='nearest')
+                mrcnn_parameters = self.plane_params(mrcnn_feature_maps,
+                                                      rois.unsqueeze(0),
+                                                      target_mask_prob.unsqueeze(0),
+                                                      disp_np,
+                                                      ranges_feat,
+                                                      writer=writer,
+                                                      target=target_support,
+                                                      target_class=target_class_ids,
+                                                      target_params=target_parameters)
+                mrcnn_support = torch.zeros((target_support.shape[0], 2, target_support.shape[1]), device=target_support.device)
+                mrcnn_support_class = torch.zeros((target_support.shape[0], 2, target_support.shape[1]), device=target_support.device)
                 pass
 
             h, w = self.config.IMAGE_SHAPE[:2]
@@ -2719,11 +2664,24 @@ class MaskRCNN(nn.Module):
                     detection_boxes = detection_boxes.unsqueeze(0)
                     detection_masks, _ = self.mask(mrcnn_feature_maps, detection_boxes, self.config,
                                                                       disp_np, writer=writer)
-                    detection_support, _, _ = self.plane_params(mrcnn_feature_maps,
+                    detection_masks_h = torch.nn.functional.interpolate(detection_masks,
+                                                                        size=(self.config.MASK_POOL_SIZE,
+                                                                              self.config.MASK_POOL_SIZE),
+                                                                        mode='nearest')
+                    class_parameters = self.plane_params(mrcnn_feature_maps,
                                                           detection_boxes,
-                                                          detection_masks.unsqueeze(0),
+                                                          detection_masks_h.unsqueeze(0),
                                                           disp_np,
                                                           ranges_feat)
+
+                    _, class_ids = torch.max(mrcnn_class_final, dim=1)
+                    class_ids = class_ids[indices]
+                    idx = torch.arange(class_ids.size()[0], device=class_ids.device).long()
+                    class_parameters = class_parameters[idx, class_ids, :]
+                    detections[:, 6:9] = self.config.applyAnchorsTensor(class_ids, class_parameters)
+
+                    detection_support = torch.zeros((class_parameters.shape[0], target_support.shape[1]), device=class_parameters.device)
+
                     roi_features = roi_features[indices]
                     pass
             else:
@@ -2739,11 +2697,25 @@ class MaskRCNN(nn.Module):
                     detection_boxes = detection_boxes.unsqueeze(0)
                     detection_masks, _ = self.mask(mrcnn_feature_maps, detection_boxes, self.config,
                                                                       disp_np, writer=writer)
-                    detection_support, _, _ = self.plane_params(mrcnn_feature_maps,
+                    detection_masks_h = torch.nn.functional.interpolate(detection_masks,
+                                                                        size=(self.config.MASK_POOL_SIZE,
+                                                                              self.config.MASK_POOL_SIZE),
+                                                                        mode='nearest')
+                    class_parameters = self.plane_params(mrcnn_feature_maps,
                                                           detection_boxes,
-                                                          detection_masks.unsqueeze(0),
+                                                          detection_masks_h.unsqueeze(0),
                                                           disp_np,
                                                           ranges_feat)
+
+                    _, class_ids = torch.max(mrcnn_class_final, dim=1)
+                    class_ids = class_ids[indices]
+                    idx = torch.arange(class_ids.size()[0], device=class_ids.device).long()
+                    class_parameters = class_parameters[idx, class_ids, :]
+                    detections[:, 6:9] = self.config.applyAnchorsTensor(class_ids, class_parameters)
+
+                    detection_support = torch.zeros((class_parameters.shape[0], target_support.shape[1]),
+                                                    device=class_parameters.device)
+
                     roi_features = roi_features[indices]                    
                     pass
                 pass
