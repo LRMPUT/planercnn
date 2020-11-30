@@ -28,7 +28,7 @@ import utils
 import cv2
 from models.modules import *
 from utils import *
-import nms
+# import nms
 
 # from pytorch_memlab import MemReporter
 
@@ -1228,7 +1228,7 @@ class Classifier(nn.Module):
         x = self.bn2(x)
         x = self.relu(x)
 
-        x = x.view(-1,1024)
+        x = x.view(-1, 1024)
         mrcnn_class_logits = self.linear_class(x)
         mrcnn_probs = self.softmax(mrcnn_class_logits)
 
@@ -1341,22 +1341,22 @@ class PlaneParams(nn.Module):
         self.values = None
 
     def forward(self, x, rois, masks, disp, ranges_feat, writer=None, target=None, target_class=None, target_params=None):
-        if self.training and rois.shape[0] < 16:
-            ## Set batchnorm in eval mode during training when few ROIs
-            def set_bn_eval(m):
-                classname = m.__class__.__name__
-                if classname.find('BatchNorm') != -1:
-                    m.eval()
-
-            self.apply(set_bn_eval)
-        elif self.training:
-            ## Set batchnorm in training when enough ROIs
-            def set_bn_train(m):
-                classname = m.__class__.__name__
-                if classname.find('BatchNorm') != -1:
-                    m.train()
-
-            self.apply(set_bn_train)
+        # if self.training and rois.shape[0] < 16:
+        #     ## Set batchnorm in eval mode during training when few ROIs
+        #     def set_bn_eval(m):
+        #         classname = m.__class__.__name__
+        #         if classname.find('BatchNorm') != -1:
+        #             m.eval()
+        #
+        #     self.apply(set_bn_eval)
+        # elif self.training:
+        #     ## Set batchnorm in training when enough ROIs
+        #     def set_bn_train(m):
+        #         classname = m.__class__.__name__
+        #         if classname.find('BatchNorm') != -1:
+        #             m.train()
+        #
+        #     self.apply(set_bn_train)
 
         roi_feat = pyramid_roi_align([rois] + x, self.pool_size, self.image_shape)
         roi_ranges = coordinates_roi([rois] + [ranges_feat], self.pool_size, self.image_shape)
@@ -2136,7 +2136,8 @@ class MaskRCNN(nn.Module):
                 for p in m.parameters():
                     p.requires_grad = False
 
-        self.bn_exceptions = {'classifier', 'mask', 'plane_params'}
+        # self.bn_exceptions = {'classifier', 'mask', 'plane_params'}
+        self.bn_exceptions = {}
         for (mname, m) in self.named_children():
             if mname not in self.bn_exceptions:
                 m.apply(set_bn_fix)
