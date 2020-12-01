@@ -36,7 +36,7 @@
 #include <iostream>
 
 // Hard-coded maximum. Increase if needed.
-#define MAX_COL_BLOCKS 1000
+#define MAX_COL_BLOCKS 2000
 
 #define DIVUP(m,n) (((m)+(n)-1) / (n))
 int64_t const threadsPerBlock = sizeof(unsigned long long) * 8;

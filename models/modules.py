@@ -214,17 +214,17 @@ def unmoldDetections(config, camera, detections, detection_masks, detection_supp
             pass
         detections = torch.cat([detections[:, :6], plane_parameters], dim=-1)
         pass
-    if 'none' in config.ANCHOR_TYPE:
-        rois = detections[:, :4].clone()
-        # y
-        rois[:, [0, 2]] /= depth_np.shape[1]
-        # x
-        rois[:, [1, 3]] /= depth_np.shape[2]
-        plane_parameters = apply_support(config, camera, rois, detection_support)
-        plane_parameters = plane_parameters / torch.clamp(torch.norm(plane_parameters,
-                                                                     dim=-1,
-                                                                     keepdim=True).square(), 1e-4)
-        detections = torch.cat([detections[:, :6], plane_parameters], dim=-1)
+    # if 'none' in config.ANCHOR_TYPE:
+    #     rois = detections[:, :4].clone()
+    #     # y
+    #     rois[:, [0, 2]] /= depth_np.shape[1]
+    #     # x
+    #     rois[:, [1, 3]] /= depth_np.shape[2]
+    #     plane_parameters = apply_support(config, camera, rois, detection_support)
+    #     plane_parameters = plane_parameters / torch.clamp(torch.norm(plane_parameters,
+    #                                                                  dim=-1,
+    #                                                                  keepdim=True).square(), 1e-4)
+    #     detections = torch.cat([detections[:, :6], plane_parameters], dim=-1)
     return detections, masks
 
 

@@ -28,7 +28,7 @@ import utils
 import cv2
 from models.modules import *
 from utils import *
-# import nms
+import nms
 
 # from pytorch_memlab import MemReporter
 
@@ -3175,7 +3175,7 @@ class AnchorScores(pl.LightningModule):
                                        torch.tensor(0, dtype=torch.long, requires_grad=False).cuda())
         rpn_cross_loss = F.cross_entropy(rpn_class_logits.squeeze(0), rpn_target_class.squeeze(0).squeeze(-1))
 
-        positive_idxs = torch.nonzero(rpn_probs[:, 1] > 0.5)[:, 0]
+        positive_idxs = torch.nonzero(rpn_probs[0, :, 1] > 0.5)[:, 0]
         if positive_idxs.shape[0] > 0:
             anchors_s = self.anchors[positive_idxs]
             # TOOD Hack to pass plane parameters
@@ -3200,8 +3200,8 @@ class AnchorScores(pl.LightningModule):
                 descs_j = rpn_desc[:, j_idxs, :]
 
                 class_logits, class_prob = self.desc_dist(descs_i, descs_j)
-                for idx in range(class_prob.shape[0]):
-                    if class_prob[idx, 1] > 0.5:
+                for idx in range(class_prob.shape[2]):
+                    if class_prob[0, 1, idx] > 0.5:
                         djs.union(i_idxs[idx], j_idxs[idx])
 
         # drawing
