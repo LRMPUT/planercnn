@@ -34,7 +34,7 @@ def train(options):
     train_loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=8)
 
     dataset_test = ScenenetRgbdDataset(options, config, split='test', random=False, load_scores=True)
-    test_loader = DataLoader(dataset_test, batch_size=1, shuffle=False, num_workers=8)
+    test_loader = DataLoader(dataset_test, batch_size=1, shuffle=True, num_workers=8)
 
     # profiler = AdvancedProfiler()
     profiler = SimpleProfiler()
@@ -43,7 +43,7 @@ def train(options):
     # trainer = pl.Trainer(gpus=1, limit_train_batches=20, max_epochs=1, limit_val_batches=1, profiler=profiler)
     # trainer = pl.Trainer(gpus=1, max_epochs=10, limit_val_batches=1, val_check_interval=500)
     trainer = pl.Trainer(gpus=1, max_epochs=10, limit_val_batches=1, val_check_interval=500,
-                         resume_from_checkpoint='lightning_logs/version_0/checkpoints/epoch=1.ckpt')
+                         resume_from_checkpoint='lightning_logs/version_1/checkpoints/epoch=9.ckpt')
     # trainer = pl.Trainer(gpus=1, limit_val_batches=10, val_check_interval=500,
     #                      resume_from_checkpoint='lightning_logs/version_3/checkpoints/epoch=6.ckpt')
     trainer.fit(model, train_loader, test_loader)

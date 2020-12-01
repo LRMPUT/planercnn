@@ -1117,7 +1117,7 @@ class RPNanchor(nn.Module):
         rpn_class_logits = self.conv_class(x)
 
         ## Reshape to [batch, 2, anchors]
-        rpn_class_logits = rpn_class_logits.permute(0,2,3,1)
+        rpn_class_logits = rpn_class_logits.permute(0, 2, 3, 1)
         rpn_class_logits = rpn_class_logits.contiguous()
         rpn_class_logits = rpn_class_logits.view(x.size()[0], -1, 2)
 
@@ -1127,7 +1127,7 @@ class RPNanchor(nn.Module):
         rpn_desc = self.conv_desc(x)
 
         ## Reshape to [batch, 4, anchors]
-        rpn_desc = rpn_desc.permute(0,2,3,1)
+        rpn_desc = rpn_desc.permute(0, 2, 3, 1)
         rpn_desc = rpn_desc.contiguous()
         rpn_desc = rpn_desc.view(x.size()[0], -1, self.desc_len)
 
@@ -2845,6 +2845,7 @@ class AnchorScores(pl.LightningModule):
         self.build()
         self.initialize_weights()
         self.profiler = profiler
+        self.score_thresh = 0.95
 
         print("Loading pretrained weights ", self.options.MaskRCNNPath)
         self.load_weights(self.options.MaskRCNNPath)
@@ -2967,6 +2968,7 @@ class AnchorScores(pl.LightningModule):
         keep = keep[:num_to_keep]
 
         anchors_nms = anchors[keep]
+        planes_nms = None
         if planes is not None:
             planes_nms = planes[keep]
 
@@ -3078,7 +3080,7 @@ class AnchorScores(pl.LightningModule):
 
         [rpn_class_logits, rpn_probs, rpn_desc] = self([input_pair[0]['image']])
 
-        rpn_target_class = torch.where(input_pair[0]['rpn_match'] > 0.9,
+        rpn_target_class = torch.where(input_pair[0]['rpn_match'] > self.score_thresh,
                                        torch.tensor(1, dtype=torch.long,
                                                     device=self.device),
                                        torch.tensor(0, dtype=torch.long,
@@ -3109,7 +3111,7 @@ class AnchorScores(pl.LightningModule):
                     else:
                         negative_matches.append((overlap_idxs[0][i], overlap_idxs[1][i]))
 
-            neg_ratio = 5
+            neg_ratio = 2
             sel_positive_matches = []
             sel_negative_matches = []
             # sample neg_ratio / (neg_ratio + 1) negative samples and 1 / (neg_ratio + 1) positive samples
@@ -3170,9 +3172,11 @@ class AnchorScores(pl.LightningModule):
 
         [rpn_class_logits, rpn_probs, rpn_desc] = self([input_pair[0]['image']])
 
-        rpn_target_class = torch.where(input_pair[0]['rpn_match'] > 0.9,
-                                       torch.tensor(1, dtype=torch.long, requires_grad=False).cuda(),
-                                       torch.tensor(0, dtype=torch.long, requires_grad=False).cuda())
+        rpn_target_class = torch.where(input_pair[0]['rpn_match'] > self.score_thresh,
+                                       torch.tensor(1, dtype=torch.long,
+                                                    device=self.device),
+                                       torch.tensor(0, dtype=torch.long,
+                                                    device=self.device))
         rpn_cross_loss = F.cross_entropy(rpn_class_logits.squeeze(0), rpn_target_class.squeeze(0).squeeze(-1))
 
         positive_idxs = torch.nonzero(rpn_probs[0, :, 1] > 0.5)[:, 0]
@@ -3212,7 +3216,7 @@ class AnchorScores(pl.LightningModule):
         h = box_image.shape[0]
         w = box_image.shape[1]
 
-        positive_idxs_target = input_pair[0]['rpn_match'][:, :, 0] > 0.9
+        positive_idxs_target = input_pair[0]['rpn_match'][:, :, 0] > self.score_thresh
         anchors_target = self.anchors[positive_idxs_target.squeeze(0)]
         planes_target = input_pair[0]['rpn_bbox'][positive_idxs_target]
         anchors_target_nms, planes_target_nms = self.nms_anchors(anchors_target, planes_target)
