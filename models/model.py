@@ -580,7 +580,7 @@ def bbox_overlaps(boxes1, boxes2):
 
     return overlaps
 
-def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_parameters, gt_disp, config, camera):
+def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_parameters, disp, config, camera):
     """Subsamples proposals and generates target box refinment, class_ids,
     and masks for each.
 
@@ -659,10 +659,10 @@ def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_param
 
         ## Compute mask targets
         # y1, x1, y2, x2 = positive_rois.chunk(4, dim=1)
-        # y1 /= gt_disp.shape[2]
-        # x1 /= gt_disp.shape[3]
-        # y2 /= gt_disp.shape[2]
-        # x2 /= gt_disp.shape[3]
+        # y1 /= disp.shape[2]
+        # x1 /= disp.shape[3]
+        # y2 /= disp.shape[2]
+        # x2 /= disp.shape[3]
         # boxes_disp = torch.cat([y1, x1, y2, x2], dim=1)
 
         boxes = positive_rois
@@ -2330,14 +2330,21 @@ class MaskRCNN(nn.Module):
     def predict(self, input, mode, use_nms=1, use_refinement=False, return_feature_map=False, writer=None):
         molded_images = input[0]
         image_metas = input[1]
-
-        # TODO Checking disp features
-        gt_depth = input[7].unsqueeze(1)
         camera = input[6]
         fx = camera[0]
-        gt_disp = fx * torch.tensor(self.config.BASELINE, dtype=torch.float, device=gt_depth.device, requires_grad=False) / \
-                        torch.clamp(gt_depth, min=1.0e-4)
-        gt_disp = torch.clamp(gt_disp, min=0.0, max=self.config.MAXDISP - 1)
+
+        gt_depth = input[7].unsqueeze(1)
+        if gt_depth is not None:
+            gt_disp = fx * self.config.BASELINE / torch.clamp(gt_depth, min=1.0e-4)
+            gt_disp = torch.clamp(gt_disp, min=0.0, max=self.config.MAXDISP)
+
+        # # TODO Checking disp features
+        # gt_depth = input[7].unsqueeze(1)
+        # camera = input[6]
+        # fx = camera[0]
+        # gt_disp = fx * torch.tensor(self.config.BASELINE, dtype=torch.float, device=gt_depth.device, requires_grad=False) / \
+        #                 torch.clamp(gt_depth, min=1.0e-4)
+        # gt_disp = torch.clamp(gt_disp, min=0.0, max=self.config.MAXDISP)
 
         # remove mean value
         # molded_images = torch.cat([molded_images, 10*(gt_disp - 15.0)], dim=1)
@@ -2428,13 +2435,13 @@ class MaskRCNN(nn.Module):
                 molded_images_r = input[7]
                 [p2_out_r, p3_out_r, p4_out_r, p5_out_r, p6_out_r] = self.fpn(molded_images_r)
                 if self.training:
-                    disp1_np = self.depth(p2_out, p2_out_r)
+                    disp_np = self.depth(p2_out, p2_out_r)
                 else:
-                    disp1_np = self.depth(p2_out, p2_out_r)
+                    disp_np = self.depth(p2_out, p2_out_r)
                 pass
                 camera = input[6]
                 fx = camera[0]
-                depth_np = fx * torch.tensor(self.config.BASELINE, dtype=torch.float, requires_grad=False).cuda() / torch.clamp(disp1_np, min=1.0e-4)
+                depth_np = fx * self.config.BASELINE / torch.clamp(disp_np, min=1.0e-4)
 
                 if writer is not None:
                     min_l = p2_out.min()
@@ -2444,15 +2451,18 @@ class MaskRCNN(nn.Module):
                     writer.add_image('disp/feat_l', (p2_out[0, 0] - min_l)/(max_l - min_l), dataformats='HW')
                     writer.add_image('disp/feat_r', (p2_out_r[0, 0] - min_r)/(max_r - min_r), dataformats='HW')
             else:
-                # depth_np = self.depth(feature_maps)
-                # disp_np = disparityregression(self.config.MAXDISP)(disp_vol)[:, None, :, :]
-                disp_np = gt_disp
-                depth_np = 100.0 / torch.clamp(disp_np, min=1.0)
-                depth_np[:, :, :20, :] = 0.0
-                depth_np[:, :, -20:, :] = 0.0
+                depth_np = self.depth(feature_maps)
+                disp_np = fx * self.config.BASELINE / torch.clamp(depth_np, min=1.0e-4)
 
-                depth_np = torch.nn.functional.interpolate(depth_np, size=(640, 640), mode='bilinear')
-                depth_np = self.depth(depth_np)
+                # disp_np = disparityregression(self.config.MAXDISP)(disp_vol)[:, None, :, :]
+
+                # disp_np = gt_disp
+                # depth_np = 100.0 / torch.clamp(disp_np, min=1.0)
+                # depth_np[:, :, :20, :] = 0.0
+                # depth_np[:, :, -20:, :] = 0.0
+                #
+                # depth_np = torch.nn.functional.interpolate(depth_np, size=(640, 640), mode='bilinear')
+                # depth_np = self.depth(depth_np)
 
                 if self.config.PREDICT_BOUNDARY:
                     boundary = depth_np[:, 1:]
@@ -2462,6 +2472,7 @@ class MaskRCNN(nn.Module):
                     pass
         else:
             depth_np = torch.ones((1, self.config.IMAGE_MAX_DIM, self.config.IMAGE_MAX_DIM)).cuda()
+            disp_np = torch.ones((1, self.config.IMAGE_MAX_DIM, self.config.IMAGE_MAX_DIM)).cuda()
             pass
         
         ranges = self.config.getRanges(camera).transpose(1, 2).transpose(0, 1)
@@ -2544,7 +2555,7 @@ class MaskRCNN(nn.Module):
             ## Note that proposal class IDs, gt_boxes, and gt_masks are zero
             ## padded. Equally, returned rois and targets are zero padded.
             rois, target_class_ids, target_deltas, target_mask, target_parameters, target_support = \
-                detection_target_layer(rpn_rois, gt_class_ids, gt_boxes, gt_masks, gt_parameters, gt_disp, self.config, camera)
+                detection_target_layer(rpn_rois, gt_class_ids, gt_boxes, gt_masks, gt_parameters, disp_np, self.config, camera)
 
             if len(rois) == 0:
                 mrcnn_class_logits = Variable(torch.FloatTensor())
@@ -2589,7 +2600,7 @@ class MaskRCNN(nn.Module):
             ## padded. Equally, returned rois and targets are zero padded.
             
             rois, target_class_ids, target_deltas, target_mask, target_parameters, target_support = \
-                detection_target_layer(rpn_rois, gt_class_ids, gt_boxes, gt_masks, gt_parameters, gt_disp, self.config, camera)
+                detection_target_layer(rpn_rois, gt_class_ids, gt_boxes, gt_masks, gt_parameters, disp_np, self.config, camera)
 
             if len(rois) == 0:
                 mrcnn_class_logits = Variable(torch.FloatTensor())

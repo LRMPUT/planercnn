@@ -212,7 +212,7 @@ class Config(object):
         
         self.loadAnchorPlanes(options.anchorType)
         self.PREDICT_DEPTH = True
-        self.PREDICT_STEREO = False
+        self.PREDICT_STEREO = True
         self.MAXDISP = 192
         self.BASELINE = 0.2
         self.PREDICT_BOUNDARY = False

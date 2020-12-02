@@ -167,7 +167,7 @@ def train(options):
                  rpn_rois, roi_features, roi_indices, feature_map, depth_np_pred, disp1_np_pred] = model.predict(
                         [input_pair[0]['image'], input_pair[0]['image_meta'], input_pair[0]['class_ids'],
                          input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
-                         input_pair[0]['camera'],
+                         input_pair[0]['camera'], None,
                          input_pair[1]['image']],
                         mode='training_detection', use_nms=2, use_refinement=False,
                         return_feature_map=True)
@@ -222,7 +222,7 @@ def train(options):
             else:
                 if config.PREDICT_STEREO:
                     fx = input_pair[0]['camera'][0]
-                    gt_disp = fx * torch.tensor(config.BASELINE, dtype=torch.float, requires_grad=False).cuda() / torch.clamp(gt_depth, min=1.0e-4)
+                    gt_disp = fx * config.BASELINE / torch.clamp(gt_depth, min=1.0e-4)
                     mask = gt_disp < config.MAXDISP
                     # disp_np_loss = 0.5 * F.smooth_l1_loss(disp1_np_pred[mask], gt_disp[mask], size_average=True) +\
                     #                0.7 * F.smooth_l1_loss(disp2_np_pred[mask], gt_disp[mask], size_average=True) +\
