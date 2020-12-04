@@ -2138,7 +2138,8 @@ class MaskRCNN(nn.Module):
                     p.requires_grad = False
 
         # self.bn_exceptions = {'classifier', 'mask', 'plane_params'}
-        self.bn_exceptions = {}
+        self.bn_exceptions = {'depth'}
+        # self.bn_exceptions = {}
         for (mname, m) in self.named_children():
             if mname not in self.bn_exceptions:
                 m.apply(set_bn_fix)
