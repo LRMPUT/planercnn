@@ -2333,8 +2333,10 @@ class MaskRCNN(nn.Module):
         camera = input[6]
         fx = camera[0]
 
-        gt_depth = input[7].unsqueeze(1)
-        if gt_depth is not None:
+        gt_depth = None
+        gt_disp = None
+        if input[7] is not None:
+            gt_depth = input[7].unsqueeze(1)
             gt_disp = fx * self.config.BASELINE / torch.clamp(gt_depth, min=1.0e-4)
             gt_disp = torch.clamp(gt_disp, min=0.0, max=self.config.MAXDISP)
 
@@ -2432,15 +2434,17 @@ class MaskRCNN(nn.Module):
         feature_maps = [feature_map for index, feature_map in enumerate(rpn_feature_maps[::-1])]
         if self.config.PREDICT_DEPTH:
             if self.config.PREDICT_STEREO:
-                molded_images_r = input[7]
+                molded_images_r = input[8]
                 [p2_out_r, p3_out_r, p4_out_r, p5_out_r, p6_out_r] = self.fpn(molded_images_r)
                 if self.training:
                     disp_np = self.depth(p2_out, p2_out_r)
+                    disp_np = disp_np.unsqueeze(1)
                 else:
                     disp_np = self.depth(p2_out, p2_out_r)
+                    disp_np = disp_np.unsqueeze(1)
                 pass
-                camera = input[6]
-                fx = camera[0]
+                # camera = input[6]
+                # fx = camera[0]
                 depth_np = fx * self.config.BASELINE / torch.clamp(disp_np, min=1.0e-4)
 
                 if writer is not None:
@@ -2835,9 +2839,9 @@ class MaskRCNN(nn.Module):
                 pass
 
             if self.config.PREDICT_STEREO:
-                info.append(depth_np)
+                info.append(depth_np.squeeze(1))
                 if self.training:
-                    info.append(disp1_np)
+                    info.append(disp_np.squeeze(1))
             else:
                 info.append(depth_np)
                 if self.config.PREDICT_BOUNDARY:
