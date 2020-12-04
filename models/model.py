@@ -1593,17 +1593,18 @@ def convbn(in_planes, out_planes, kernel_size, stride, pad, dilation):
 
     return nn.Sequential(nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, stride=stride,
                                    padding=dilation if dilation > 1 else pad, dilation=dilation, bias=False),
-                         nn.BatchNorm2d(out_planes))
+                         nn.BatchNorm2d(out_planes, eps=0.001, momentum=0.01))
 
 
 def convbn_3d(in_planes, out_planes, kernel_size, stride, pad):
 
-    return nn.Sequential(nn.Conv3d(in_planes, out_planes, kernel_size=kernel_size, padding=pad, stride=stride,bias=False),
-                         nn.BatchNorm3d(out_planes))
+    return nn.Sequential(nn.Conv3d(in_planes, out_planes, kernel_size=kernel_size, padding=pad, stride=stride, bias=False),
+                         nn.BatchNorm3d(out_planes, eps=0.001, momentum=0.01))
 
 
 class BasicBlock(nn.Module):
     expansion = 1
+
     def __init__(self, inplanes, planes, stride, downsample, pad, dilation):
         super(BasicBlock, self).__init__()
 
@@ -1645,7 +1646,7 @@ class Hourglass(nn.Module):
         self.conv5 = nn.Sequential(
             nn.ConvTranspose3d(inplanes * 2, inplanes * 2, kernel_size=3, padding=1, output_padding=1, stride=2,
                                bias=False),
-            nn.BatchNorm3d(inplanes * 2))  # +conv2
+            nn.BatchNorm3d(inplanes * 2, eps=0.001, momentum=0.01))  # +conv2
 
         self.conv6 = nn.Sequential(
             nn.ConvTranspose3d(inplanes * 2, inplanes, kernel_size=3, padding=1, output_padding=1, stride=2,
@@ -1737,7 +1738,7 @@ class DepthStereo(nn.Module):
            downsample = nn.Sequential(
                 nn.Conv2d(self.inplanes, planes * block.expansion,
                           kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(planes * block.expansion),)
+                nn.BatchNorm2d(planes * block.expansion, eps=0.001, momentum=0.01),)
 
         layers = []
         layers.append(block(self.inplanes, planes, stride, downsample, pad, dilation))
