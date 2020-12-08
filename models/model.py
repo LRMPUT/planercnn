@@ -1719,10 +1719,10 @@ class DepthStereo(nn.Module):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
+                m.weight.data.normal_(0, math.sqrt(.5 / n))
             elif isinstance(m, nn.Conv3d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.kernel_size[2] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
+                m.weight.data.normal_(0, math.sqrt(.5 / n))
             elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
@@ -2138,8 +2138,8 @@ class MaskRCNN(nn.Module):
                     p.requires_grad = False
 
         # self.bn_exceptions = {'classifier', 'mask', 'plane_params'}
-        self.bn_exceptions = {'depth'}
-        # self.bn_exceptions = {}
+        # self.bn_exceptions = {'depth'}
+        self.bn_exceptions = {}
         for (mname, m) in self.named_children():
             if mname not in self.bn_exceptions:
                 m.apply(set_bn_fix)
