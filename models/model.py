@@ -1312,83 +1312,76 @@ class PlaneParams(nn.Module):
         self.pool_size = pool_size
         self.image_shape = image_shape
         self.num_classes = num_classes
-        self.num_feats = 1024
+        self.num_feats = 256
         self.num_pts = 1
-        self.padding = SamePad2d(kernel_size=5, stride=1)
-        self.padding2 = SamePad2d(kernel_size=5, stride=2)
+        self.padding = SamePad2d(kernel_size=3, stride=1)
+        self.padding2 = SamePad2d(kernel_size=3, stride=2)
         self.relu = nn.ReLU(inplace=True)
         # self.dropout = nn.Dropout(p=0.25)
 
         # features and mask as input
-        self.conv_vis = nn.Conv2d(self.depth + num_classes + 64,
-                                  self.num_pts * self.num_feats,
-                                  kernel_size=self.pool_size,
-                                  stride=1)
-        self.bn_vis = nn.BatchNorm1d(self.num_pts * self.num_feats, eps=0.001, momentum=0.01)
-
-        # disparity and mask as input
-        self.conv_geom = nn.Conv2d(1 + num_classes + 64,
-                                   self.num_pts * self.num_feats,
-                                   kernel_size=self.pool_size,
+        self.conv1_vis = nn.Conv2d(self.depth + 64,
+                                   self.num_feats,
+                                   kernel_size=3,
+                                   stride=2)
+        self.conv2_vis = nn.Conv2d(2 * self.num_feats,
+                                   self.num_feats,
+                                   kernel_size=3,
+                                   stride=2)
+        self.conv3_vis = nn.Conv2d(2 * self.num_feats,
+                                   self.num_feats,
+                                   kernel_size=3,
                                    stride=1)
-        self.bn_geom = nn.BatchNorm1d(self.num_pts * self.num_feats, eps=0.001, momentum=0.01)
 
-        self.lin_sup = nn.Linear(2*self.num_pts*self.num_feats, self.num_pts*self.num_feats)
-        self.bn1 = nn.BatchNorm1d(self.num_pts * self.num_feats, eps=0.001, momentum=0.01)
-        # self.lin_sup_disp = nn.Linear(self.num_pts * self.num_feats, self.num_pts * self.config.MAXDISP * 2)
-        self.lin_sup_class = nn.Linear(self.num_pts * self.num_feats, 3 * num_classes)
+        self.conv1_geom = nn.Conv2d(self.config.MAXDISP + 64,
+                                    self.num_feats,
+                                    kernel_size=3,
+                                    stride=2)
+        self.conv2_geom = nn.Conv2d(2 * self.num_feats,
+                                    self.num_feats,
+                                    kernel_size=3,
+                                    stride=2)
+        self.conv3_geom = nn.Conv2d(2 * self.num_feats,
+                                    self.num_feats,
+                                    kernel_size=3,
+                                    stride=1)
+
+        self.conv4 = nn.Conv2d(2 * self.num_feats,
+                               self.config.MAXDISP,
+                               kernel_size=2,
+                               stride=2)
 
         self.values = None
 
     def forward(self, x, rois, masks, disp, ranges_feat, writer=None, target=None, target_class=None, target_params=None):
-        # if self.training and rois.shape[0] < 16:
-        #     ## Set batchnorm in eval mode during training when few ROIs
-        #     def set_bn_eval(m):
-        #         classname = m.__class__.__name__
-        #         if classname.find('BatchNorm') != -1:
-        #             m.eval()
-        #
-        #     self.apply(set_bn_eval)
-        # elif self.training:
-        #     ## Set batchnorm in training when enough ROIs
-        #     def set_bn_train(m):
-        #         classname = m.__class__.__name__
-        #         if classname.find('BatchNorm') != -1:
-        #             m.train()
-        #
-        #     self.apply(set_bn_train)
 
         roi_feat = pyramid_roi_align([rois] + x, self.pool_size, self.image_shape)
         roi_ranges = coordinates_roi([rois] + [ranges_feat], self.pool_size, self.image_shape)
-        roi_disp = disp_roi_align([rois] + [disp], self.pool_size)
-        # masks_pos = masks[0, :, 1:2, :, :]
-        # roi_disp_mean = torch.sum(roi_disp * masks_pos, dim=(2, 3), keepdim=True) /\
-        #                 torch.clamp(torch.sum(masks_pos, dim=(2, 3), keepdim=True), min=1.0)
-        # roi_disp_stddev = torch.sum(((roi_disp - roi_disp_mean) * masks_pos).square(), dim=(2, 3), keepdim=True) / \
-        #                   torch.clamp(torch.sum(masks_pos, dim=(2, 3), keepdim=True), min=1.0)
-        # roi_disp_stddev = torch.clamp(roi_disp_stddev.sqrt(), min=1.0)
-        # roi_disp_norm = (roi_disp - roi_disp_mean) / roi_disp_stddev
+        # roi_disp = disp_roi_align([rois] + [disp], self.pool_size)
+        roi_vol = create_disp_vol(self.config, disp, rois, self.pool_size)
 
-        x_vis = torch.cat([roi_feat, roi_ranges, masks.squeeze(0)], dim=1)
-        x_vis = self.conv_vis(x_vis)
+        x_vis = torch.cat([roi_feat, roi_ranges], dim=1)
+        x_vis = self.conv1_vis(self.padding2(x_vis))
         x_vis = self.relu(x_vis)
-        x_vis = x_vis.view(-1, self.num_pts * self.num_feats)
-        x_vis = self.bn_vis(x_vis)
-
-        x_geom = torch.cat([roi_disp, roi_ranges, masks.squeeze(0)], dim=1)
-        x_geom = self.conv_geom(x_geom)
+        x_geom = torch.cat([roi_vol, roi_ranges], dim=1)
+        x_geom = self.conv1_geom(self.padding2(x_geom))
         x_geom = self.relu(x_geom)
-        x_geom = x_geom.view(-1, self.num_pts*self.num_feats)
-        x_geom = self.bn_geom(x_geom)
 
-        x = torch.cat([x_vis, x_geom], dim=1)
+        x1_vis = self.conv2_vis(self.padding2(torch.cat([x_vis, x_geom], dim=1)))
+        x1_vis = self.relu(x1_vis)
+        x1_geom = self.conv2_geom(self.padding2(torch.cat([x_geom, x_vis], dim=1)))
+        x1_geom = self.relu(x1_geom)
 
-        x = self.lin_sup(x)
-        x = self.relu(x)
-        x = self.bn1(x)
+        x2_vis = self.conv3_vis(self.padding(torch.cat([x1_vis, x1_geom], dim=1)))
+        x2_vis = self.relu(x2_vis)
+        x2_geom = self.conv3_geom(self.padding(torch.cat([x1_geom, x1_vis], dim=1)))
+        x2_geom = self.relu(x2_geom)
 
-        x_class = self.lin_sup_class(x)
-        x_class = x_class.view(-1, self.num_classes, 3)
+        x = self.conv4(torch.cat([x2_vis, x2_geom], dim=1))
+
+        pred = F.softmax(x, dim=1)
+        pred = DisparityRegression(self.config.MAXDISP)(pred)
+        pred = pred.view(-1, 4)
 
         # if target is not None and target_class is not None:
         #     if (target_class > 0).sum() > 0:
@@ -1444,7 +1437,7 @@ class PlaneParams(nn.Module):
         # if torch.isnan(pred).any() or torch.isinf(pred).any():
         #     print(pred)
 
-        return x_class
+        return pred
 
 
 class DisparityRegression(nn.Module):
@@ -1972,7 +1965,7 @@ def compute_mrcnn_parameter_loss(target_parameters, target_class_ids, pred_param
     return loss
 
 
-def compute_mrcnn_support_loss(target_support, mrcnn_support, mrcnn_support_class, target_class_ids):
+def compute_mrcnn_support_loss(target_support, mrcnn_support, target_class_ids):
     if (target_class_ids > 0).sum() > 0:
         ## Only positive ROIs contribute to the loss. And only
         ## the class specific mask of each ROI.
@@ -1983,15 +1976,9 @@ def compute_mrcnn_support_loss(target_support, mrcnn_support, mrcnn_support_clas
         ## Gather the masks (predicted and true) that contribute to loss
         target_support_pos = target_support[positive_ix, :]
         mrcnn_support_pos = mrcnn_support[positive_ix, :]
-        target_support_class_pos = torch.where(target_support_pos > 0,
-                                               torch.zeros(1, dtype=torch.long, device=target_support.device),
-                                               torch.ones(1, dtype=torch.long, device=target_support.device))
-        mrcnn_support_class_pos = mrcnn_support_class[positive_ix, :]
 
-        mrcnn_support_pos = torch.where(target_support_pos > 0, mrcnn_support_pos[:, 0, :], mrcnn_support_pos[:, 1, :])
 
         loss_disp = F.smooth_l1_loss(mrcnn_support_pos, target_support_pos)
-        loss_class = F.cross_entropy(mrcnn_support_class_pos, target_support_class_pos)
         # if loss > 1 or torch.isnan(loss).any():
         #     print('\nsupport loss: ', loss.float())
         #     print('num rois: ', target_support_pos.shape[0])
@@ -1999,12 +1986,11 @@ def compute_mrcnn_support_loss(target_support, mrcnn_support, mrcnn_support_clas
         #     print('stddev target disp: ', torch.std(target_support_pos).float())
     else:
         loss_disp = torch.zeros(1, dtype=torch.float, device=target_support.device)
-        loss_class = torch.zeros(1, dtype=torch.float, device=target_support.device)
-    return loss_disp, loss_class
+    return loss_disp
 
 def compute_losses(config, rpn_match, rpn_bbox, rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits,
                    target_deltas, mrcnn_bbox, target_mask, mrcnn_mask, target_parameters, mrcnn_parameters,
-                   target_support, mrcnn_support, mrcnn_support_class):
+                   target_support, mrcnn_support):
 
     rpn_class_loss = compute_rpn_class_loss(rpn_match, rpn_class_logits)
     rpn_bbox_loss = compute_rpn_bbox_loss(rpn_bbox, rpn_match, rpn_pred_bbox)
@@ -2012,9 +1998,9 @@ def compute_losses(config, rpn_match, rpn_bbox, rpn_class_logits, rpn_pred_bbox,
     mrcnn_bbox_loss = compute_mrcnn_bbox_loss(target_deltas, target_class_ids, mrcnn_bbox)
     mrcnn_mask_loss = compute_mrcnn_mask_loss(config, target_mask, target_class_ids, target_parameters, mrcnn_mask)
     mrcnn_parameter_loss = 50*compute_mrcnn_parameter_loss(target_parameters, target_class_ids, mrcnn_parameters)
-    mrcnn_support_loss, mrcnn_support_class_loss = compute_mrcnn_support_loss(target_support, mrcnn_support, mrcnn_support_class, target_class_ids)
+    mrcnn_support_loss = compute_mrcnn_support_loss(target_support, mrcnn_support, target_class_ids)
     return [rpn_class_loss, rpn_bbox_loss, mrcnn_class_loss, mrcnn_bbox_loss, mrcnn_mask_loss, mrcnn_parameter_loss,
-            mrcnn_support_loss, mrcnn_support_class_loss]
+            mrcnn_support_loss]
 
 
 
@@ -2109,7 +2095,7 @@ class MaskRCNN(nn.Module):
         # self.mask = Mask(config, 256 + config.MAXDISP, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
         self.mask = Mask(config, 256, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
 
-        self.plane_params = PlaneParams(config, 256, config.MASK_POOL_SIZE, config.IMAGE_SHAPE, config.NUM_CLASSES)
+        self.plane_params = PlaneParams(config, 256, 16, config.IMAGE_SHAPE, config.NUM_CLASSES)
 
         if self.config.PREDICT_DEPTH:
             if self.config.PREDICT_STEREO:
@@ -2606,7 +2592,7 @@ class MaskRCNN(nn.Module):
                     mrcnn_mask = mrcnn_mask.cuda()
                     mrcnn_parameters = mrcnn_parameters.cuda()
                     mrcnn_support = mrcnn_support.cuda()
-                    mrcnn_support_class = mrcnn_support_class.cuda()
+                    # mrcnn_support_class = mrcnn_support_class.cuda()
             else:
                 ## Network Heads
                 ## Proposal classifier and BBox regressor heads
@@ -2632,7 +2618,7 @@ class MaskRCNN(nn.Module):
                                                                    size=(self.config.MASK_POOL_SIZE,
                                                                          self.config.MASK_POOL_SIZE),
                                                                    mode='nearest')
-                mrcnn_parameters = self.plane_params(mrcnn_feature_maps,
+                mrcnn_support = self.plane_params(mrcnn_feature_maps,
                                                       rois.unsqueeze(0),
                                                       target_mask_prob.unsqueeze(0),
                                                       disp_np,
@@ -2641,8 +2627,8 @@ class MaskRCNN(nn.Module):
                                                       target=target_support,
                                                       target_class=target_class_ids,
                                                       target_params=target_parameters)
-                mrcnn_support = torch.zeros((target_support.shape[0], 2, target_support.shape[1]), device=target_support.device)
-                mrcnn_support_class = torch.zeros((target_support.shape[0], 2, target_support.shape[1]), device=target_support.device)
+                # mrcnn_support = torch.zeros((target_support.shape[0], 2, target_support.shape[1]), device=target_support.device)
+                # mrcnn_support_class = torch.zeros((target_support.shape[0], 2, target_support.shape[1]), device=target_support.device)
                 pass
 
             h, w = self.config.IMAGE_SHAPE[:2]
@@ -2669,19 +2655,19 @@ class MaskRCNN(nn.Module):
                                                                         size=(self.config.MASK_POOL_SIZE,
                                                                               self.config.MASK_POOL_SIZE),
                                                                         mode='nearest')
-                    class_parameters = self.plane_params(mrcnn_feature_maps,
+                    detection_support = self.plane_params(mrcnn_feature_maps,
                                                           detection_boxes,
                                                           detection_masks_h.unsqueeze(0),
                                                           disp_np,
                                                           ranges_feat)
 
-                    _, class_ids = torch.max(mrcnn_class_final, dim=1)
-                    class_ids = class_ids[indices]
-                    idx = torch.arange(class_ids.size()[0], device=class_ids.device).long()
-                    class_parameters = class_parameters[idx, class_ids, :]
-                    detections[:, 6:9] = self.config.applyAnchorsTensor(class_ids, class_parameters)
-
-                    detection_support = torch.zeros((class_parameters.shape[0], target_support.shape[1]), device=class_parameters.device)
+                    # _, class_ids = torch.max(mrcnn_class_final, dim=1)
+                    # class_ids = class_ids[indices]
+                    # idx = torch.arange(class_ids.size()[0], device=class_ids.device).long()
+                    # class_parameters = class_parameters[idx, class_ids, :]
+                    # detections[:, 6:9] = self.config.applyAnchorsTensor(class_ids, class_parameters)
+                    #
+                    # detection_support = torch.zeros((class_parameters.shape[0], target_support.shape[1]), device=class_parameters.device)
 
                     roi_features = roi_features[indices]
                     pass
@@ -2702,20 +2688,20 @@ class MaskRCNN(nn.Module):
                                                                         size=(self.config.MASK_POOL_SIZE,
                                                                               self.config.MASK_POOL_SIZE),
                                                                         mode='nearest')
-                    class_parameters = self.plane_params(mrcnn_feature_maps,
+                    detection_support = self.plane_params(mrcnn_feature_maps,
                                                           detection_boxes,
                                                           detection_masks_h.unsqueeze(0),
                                                           disp_np,
                                                           ranges_feat)
 
-                    _, class_ids = torch.max(mrcnn_class_final, dim=1)
-                    class_ids = class_ids[indices]
-                    idx = torch.arange(class_ids.size()[0], device=class_ids.device).long()
-                    class_parameters = class_parameters[idx, class_ids, :]
-                    detections[:, 6:9] = self.config.applyAnchorsTensor(class_ids, class_parameters)
-
-                    detection_support = torch.zeros((class_parameters.shape[0], target_support.shape[1]),
-                                                    device=class_parameters.device)
+                    # _, class_ids = torch.max(mrcnn_class_final, dim=1)
+                    # class_ids = class_ids[indices]
+                    # idx = torch.arange(class_ids.size()[0], device=class_ids.device).long()
+                    # class_parameters = class_parameters[idx, class_ids, :]
+                    # detections[:, 6:9] = self.config.applyAnchorsTensor(class_ids, class_parameters)
+                    #
+                    # detection_support = torch.zeros((class_parameters.shape[0], target_support.shape[1]),
+                    #                                 device=class_parameters.device)
 
                     roi_features = roi_features[indices]                    
                     pass
@@ -2816,7 +2802,7 @@ class MaskRCNN(nn.Module):
 
             info = [rpn_class_logits, rpn_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
                     target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, target_support, mrcnn_support,
-                    mrcnn_support_class, detections, detection_masks, detection_support,
+                    detections, detection_masks, detection_support,
                     roi_gt_class_ids, roi_gt_parameters, roi_gt_masks, rpn_rois, roi_features, roi_indices]
             if return_feature_map:
                 feature_map = mrcnn_feature_maps
