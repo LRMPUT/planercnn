@@ -1314,42 +1314,60 @@ class PlaneParams(nn.Module):
         self.num_classes = num_classes
         self.num_feats = 256
         self.num_pts = 1
-        self.padding = SamePad2d(kernel_size=3, stride=1)
-        self.padding2 = SamePad2d(kernel_size=3, stride=2)
+        self.padding2d = SamePad2d(kernel_size=3, stride=1)
+        # self.padding3d_1 = SamePad3d(kernel_size=3, stride=1)
+        # self.padding3d_2 = SamePad3d(kernel_size=3, stride=2)
+        # self.padding2 = SamePad2d(kernel_size=3, stride=2)
         self.relu = nn.ReLU(inplace=True)
         # self.dropout = nn.Dropout(p=0.25)
 
         # features and mask as input
-        self.conv1_vis = nn.Conv2d(self.depth + 64,
-                                   self.num_feats,
-                                   kernel_size=3,
-                                   stride=2)
-        self.conv2_vis = nn.Conv2d(2 * self.num_feats,
-                                   self.num_feats,
-                                   kernel_size=3,
-                                   stride=2)
-        self.conv3_vis = nn.Conv2d(2 * self.num_feats,
-                                   self.num_feats,
+        self.conv0_vis = nn.Conv2d(self.depth + 64,
+                                   self.config.MAXDISP,
                                    kernel_size=3,
                                    stride=1)
 
-        self.conv1_geom = nn.Conv2d(self.config.MAXDISP + 64,
-                                    self.num_feats,
-                                    kernel_size=3,
-                                    stride=2)
-        self.conv2_geom = nn.Conv2d(2 * self.num_feats,
-                                    self.num_feats,
-                                    kernel_size=3,
-                                    stride=2)
-        self.conv3_geom = nn.Conv2d(2 * self.num_feats,
-                                    self.num_feats,
-                                    kernel_size=3,
-                                    stride=1)
+        self.conv1 = nn.Conv3d(2,
+                               16,
+                               kernel_size=3,
+                               stride=(1, 1, 1),
+                               padding=(1, 1, 1),
+                               padding_mode='replicate')
 
-        self.conv4 = nn.Conv2d(2 * self.num_feats,
-                               self.config.MAXDISP,
-                               kernel_size=2,
-                               stride=2)
+        self.conv2 = nn.Conv3d(2,
+                               16,
+                               kernel_size=3,
+                               stride=(1, 2, 2),
+                               padding=(1, 1, 1),
+                               padding_mode='replicate')
+
+        self.conv3 = nn.Conv3d(16,
+                               16,
+                               kernel_size=3,
+                               stride=(1, 1, 1),
+                               padding=(1, 1, 1),
+                               padding_mode='replicate')
+
+        self.conv4 = nn.Conv3d(16,
+                               32,
+                               kernel_size=3,
+                               stride=(1, 2, 2),
+                               padding=(1, 1, 1),
+                               padding_mode='replicate')
+
+        self.conv5 = nn.Conv3d(32,
+                               32,
+                               kernel_size=3,
+                               stride=(1, 1, 1),
+                               padding=(1, 1, 1),
+                               padding_mode='replicate')
+
+        self.conv6 = nn.Conv3d(32,
+                               1,
+                               kernel_size=3,
+                               stride=(1, 2, 2),
+                               padding=(1, 1, 1),
+                               padding_mode='replicate')
 
         self.values = None
 
@@ -1361,27 +1379,29 @@ class PlaneParams(nn.Module):
         roi_vol = create_disp_vol(self.config, disp, rois, self.pool_size)
 
         x_vis = torch.cat([roi_feat, roi_ranges], dim=1)
-        x_vis = self.conv1_vis(self.padding2(x_vis))
+        x_vis = self.conv0_vis(self.padding2d(x_vis))
         x_vis = self.relu(x_vis)
-        x_geom = torch.cat([roi_vol, roi_ranges], dim=1)
-        x_geom = self.conv1_geom(self.padding2(x_geom))
-        x_geom = self.relu(x_geom)
+        x_vis = x_vis.view(-1, 1, self.config.MAXDISP, self.pool_size, self.pool_size)
 
-        x1_vis = self.conv2_vis(self.padding2(torch.cat([x_vis, x_geom], dim=1)))
-        x1_vis = self.relu(x1_vis)
-        x1_geom = self.conv2_geom(self.padding2(torch.cat([x_geom, x_vis], dim=1)))
-        x1_geom = self.relu(x1_geom)
+        x_geom = roi_vol.view(-1, 1, self.config.MAXDISP, self.pool_size, self.pool_size)
 
-        x2_vis = self.conv3_vis(self.padding(torch.cat([x1_vis, x1_geom], dim=1)))
-        x2_vis = self.relu(x2_vis)
-        x2_geom = self.conv3_geom(self.padding(torch.cat([x1_geom, x1_vis], dim=1)))
-        x2_geom = self.relu(x2_geom)
-
-        x = self.conv4(torch.cat([x2_vis, x2_geom], dim=1))
+        x = torch.cat([x_vis, x_geom], dim=1)
+        # x = self.conv1(x)
+        # x = self.relu(x)
+        x = self.conv2(x)
+        x = self.relu(x)
+        x = self.conv3(x)
+        x = self.relu(x)
+        x = self.conv4(x)
+        x = self.relu(x)
+        x = self.conv5(x)
+        x = self.relu(x)
+        x = self.conv6(x)
+        x = x.view(-1, self.config.MAXDISP, 2, 2)
 
         pred = F.softmax(x, dim=1)
-        pred = DisparityRegression(self.config.MAXDISP)(pred)
-        pred = pred.view(-1, 4)
+        pred1 = DisparityRegression(self.config.MAXDISP)(pred)
+        pred1 = pred1.view(-1, 4)
 
         # if target is not None and target_class is not None:
         #     if (target_class > 0).sum() > 0:
@@ -1393,7 +1413,7 @@ class PlaneParams(nn.Module):
         #
         #         ## Gather the masks (predicted and true) that contribute to loss
         #         target_support_pos = target[positive_ix, :]
-        #         mrcnn_support_pos = pred[positive_ix, :]
+        #         mrcnn_support_pos = pred1[positive_ix, :]
         #
         #         # outlier_mask = target_norm.abs() > 20.0
         #         # if outlier_mask.any():
@@ -1419,9 +1439,9 @@ class PlaneParams(nn.Module):
         #         # if writer is not None:
         #         #     writer.add_histogram('support_disp', self.values, bins=50)
         #
-        #         loss = F.smooth_l1_loss(mrcnn_support_pos, target_support_pos)
-        #         if loss > 6 or torch.isnan(loss).any():
-        #             print('loss')
+                # loss = F.smooth_l1_loss(mrcnn_support_pos, target_support_pos)
+                # if loss > 6 or torch.isnan(loss).any():
+                #     print('loss')
         #             # torch.set_printoptions(precision=4, sci_mode=False)
         #             # print('\ntarget_norm = ', target_norm[outlier_mask.any(1)])
         #             # print('target_support_pos = ', target_support_pos[outlier_mask.any(1)])
@@ -1437,7 +1457,7 @@ class PlaneParams(nn.Module):
         # if torch.isnan(pred).any() or torch.isinf(pred).any():
         #     print(pred)
 
-        return pred
+        return pred1
 
 
 class DisparityRegression(nn.Module):
@@ -1597,6 +1617,7 @@ def convbn_3d(in_planes, out_planes, kernel_size, stride, pad):
 
 class BasicBlock(nn.Module):
     expansion = 1
+
     def __init__(self, inplanes, planes, stride, downsample, pad, dilation):
         super(BasicBlock, self).__init__()
 
@@ -1727,16 +1748,16 @@ class DepthStereo(nn.Module):
     def _make_layer(self, block, planes, blocks, stride, pad, dilation):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
-           downsample = nn.Sequential(
-                nn.Conv2d(self.inplanes, planes * block.expansion,
-                          kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(planes * block.expansion),)
+            downsample = nn.Sequential(
+                    nn.Conv2d(self.inplanes, planes * block.expansion,
+                              kernel_size=1, stride=stride, bias=False),
+                    nn.BatchNorm2d(planes * block.expansion), )
 
         layers = []
         layers.append(block(self.inplanes, planes, stride, downsample, pad, dilation))
         self.inplanes = planes * block.expansion
         for i in range(1, blocks):
-            layers.append(block(self.inplanes, planes,1,None,pad,dilation))
+            layers.append(block(self.inplanes, planes, 1, None, pad, dilation))
 
         return nn.Sequential(*layers)
 
