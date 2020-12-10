@@ -2614,33 +2614,33 @@ class MaskRCNN(nn.Module):
                     mrcnn_feature_maps, rois.unsqueeze(0), ranges_feat, self.config, disp_np, pool_features=True, writer=writer)
                 ## Create masks for detections
                 mrcnn_mask, _ = self.mask(mrcnn_feature_maps, rois.unsqueeze(0), self.config, disp_np, writer=writer)
-                target_mask_prob = torch.zeros((target_mask.shape[0],
-                                               self.config.NUM_CLASSES,
-                                               target_mask.shape[1],
-                                               target_mask.shape[2]),
-                                              dtype=torch.float,
-                                              device=target_mask.device)
-                target_mask_prob.scatter_(1,
-                                          target_mask.unsqueeze(1).long(),
-                                          torch.ones((target_mask.shape[0],
-                                                      1,
-                                                      target_mask.shape[1],
-                                                      target_mask.shape[2]),
-                                                     dtype=torch.float,
-                                                     device=target_mask.device))
-                target_mask_prob = torch.nn.functional.interpolate(target_mask_prob,
-                                                                   size=(self.config.MASK_POOL_SIZE,
-                                                                         self.config.MASK_POOL_SIZE),
-                                                                   mode='nearest')
-                mrcnn_parameters = self.plane_params(mrcnn_feature_maps,
-                                                      rois.unsqueeze(0),
-                                                      target_mask_prob.unsqueeze(0),
-                                                      disp_np,
-                                                      ranges_feat,
-                                                      writer=writer,
-                                                      target=target_support,
-                                                      target_class=target_class_ids,
-                                                      target_params=target_parameters)
+                # target_mask_prob = torch.zeros((target_mask.shape[0],
+                #                                self.config.NUM_CLASSES,
+                #                                target_mask.shape[1],
+                #                                target_mask.shape[2]),
+                #                               dtype=torch.float,
+                #                               device=target_mask.device)
+                # target_mask_prob.scatter_(1,
+                #                           target_mask.unsqueeze(1).long(),
+                #                           torch.ones((target_mask.shape[0],
+                #                                       1,
+                #                                       target_mask.shape[1],
+                #                                       target_mask.shape[2]),
+                #                                      dtype=torch.float,
+                #                                      device=target_mask.device))
+                # target_mask_prob = torch.nn.functional.interpolate(target_mask_prob,
+                #                                                    size=(self.config.MASK_POOL_SIZE,
+                #                                                          self.config.MASK_POOL_SIZE),
+                #                                                    mode='nearest')
+                # mrcnn_parameters = self.plane_params(mrcnn_feature_maps,
+                #                                       rois.unsqueeze(0),
+                #                                       target_mask_prob.unsqueeze(0),
+                #                                       disp_np,
+                #                                       ranges_feat,
+                #                                       writer=writer,
+                #                                       target=target_support,
+                #                                       target_class=target_class_ids,
+                #                                       target_params=target_parameters)
                 mrcnn_support = torch.zeros((target_support.shape[0], 2, target_support.shape[1]), device=target_support.device)
                 mrcnn_support_class = torch.zeros((target_support.shape[0], 2, target_support.shape[1]), device=target_support.device)
                 pass
@@ -2665,23 +2665,24 @@ class MaskRCNN(nn.Module):
                     detection_boxes = detection_boxes.unsqueeze(0)
                     detection_masks, _ = self.mask(mrcnn_feature_maps, detection_boxes, self.config,
                                                                       disp_np, writer=writer)
-                    detection_masks_h = torch.nn.functional.interpolate(detection_masks,
-                                                                        size=(self.config.MASK_POOL_SIZE,
-                                                                              self.config.MASK_POOL_SIZE),
-                                                                        mode='nearest')
-                    class_parameters = self.plane_params(mrcnn_feature_maps,
-                                                          detection_boxes,
-                                                          detection_masks_h.unsqueeze(0),
-                                                          disp_np,
-                                                          ranges_feat)
+                    # detection_masks_h = torch.nn.functional.interpolate(detection_masks,
+                    #                                                     size=(self.config.MASK_POOL_SIZE,
+                    #                                                           self.config.MASK_POOL_SIZE),
+                    #                                                     mode='nearest')
+                    # class_parameters = self.plane_params(mrcnn_feature_maps,
+                    #                                       detection_boxes,
+                    #                                       detection_masks_h.unsqueeze(0),
+                    #                                       disp_np,
+                    #                                       ranges_feat)
+                    #
+                    # _, class_ids = torch.max(mrcnn_class_final, dim=1)
+                    # class_ids = class_ids[indices]
+                    # idx = torch.arange(class_ids.size()[0], device=class_ids.device).long()
+                    # class_parameters = class_parameters[idx, class_ids, :]
+                    # detections[:, 6:9] = self.config.applyAnchorsTensor(class_ids, class_parameters)
 
-                    _, class_ids = torch.max(mrcnn_class_final, dim=1)
-                    class_ids = class_ids[indices]
-                    idx = torch.arange(class_ids.size()[0], device=class_ids.device).long()
-                    class_parameters = class_parameters[idx, class_ids, :]
-                    detections[:, 6:9] = self.config.applyAnchorsTensor(class_ids, class_parameters)
-
-                    detection_support = torch.zeros((class_parameters.shape[0], target_support.shape[1]), device=class_parameters.device)
+                    detection_support = torch.zeros((detection_boxes.shape[1], target_support.shape[1]),
+                                                    device=detection_boxes.device)
 
                     roi_features = roi_features[indices]
                     pass
@@ -2698,24 +2699,24 @@ class MaskRCNN(nn.Module):
                     detection_boxes = detection_boxes.unsqueeze(0)
                     detection_masks, _ = self.mask(mrcnn_feature_maps, detection_boxes, self.config,
                                                                       disp_np, writer=writer)
-                    detection_masks_h = torch.nn.functional.interpolate(detection_masks,
-                                                                        size=(self.config.MASK_POOL_SIZE,
-                                                                              self.config.MASK_POOL_SIZE),
-                                                                        mode='nearest')
-                    class_parameters = self.plane_params(mrcnn_feature_maps,
-                                                          detection_boxes,
-                                                          detection_masks_h.unsqueeze(0),
-                                                          disp_np,
-                                                          ranges_feat)
+                    # detection_masks_h = torch.nn.functional.interpolate(detection_masks,
+                    #                                                     size=(self.config.MASK_POOL_SIZE,
+                    #                                                           self.config.MASK_POOL_SIZE),
+                    #                                                     mode='nearest')
+                    # class_parameters = self.plane_params(mrcnn_feature_maps,
+                    #                                       detection_boxes,
+                    #                                       detection_masks_h.unsqueeze(0),
+                    #                                       disp_np,
+                    #                                       ranges_feat)
+                    #
+                    # _, class_ids = torch.max(mrcnn_class_final, dim=1)
+                    # class_ids = class_ids[indices]
+                    # idx = torch.arange(class_ids.size()[0], device=class_ids.device).long()
+                    # class_parameters = class_parameters[idx, class_ids, :]
+                    # detections[:, 6:9] = self.config.applyAnchorsTensor(class_ids, class_parameters)
 
-                    _, class_ids = torch.max(mrcnn_class_final, dim=1)
-                    class_ids = class_ids[indices]
-                    idx = torch.arange(class_ids.size()[0], device=class_ids.device).long()
-                    class_parameters = class_parameters[idx, class_ids, :]
-                    detections[:, 6:9] = self.config.applyAnchorsTensor(class_ids, class_parameters)
-
-                    detection_support = torch.zeros((class_parameters.shape[0], target_support.shape[1]),
-                                                    device=class_parameters.device)
+                    detection_support = torch.zeros((detection_boxes.shape[1], target_support.shape[1]),
+                                                    device=detection_boxes.device)
 
                     roi_features = roi_features[indices]                    
                     pass
