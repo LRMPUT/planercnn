@@ -1684,7 +1684,10 @@ class DepthStereo(nn.Module):
         self.im_w = im_w
         self.inplanes = inplanes
 
-        self.layer4 = self._make_layer(BasicBlock, 32, 3, 1, 1, 1)
+        # self.layer4 = self._make_layer(BasicBlock, 32, 3, 1, 1, 1)
+        self.lastconv = nn.Sequential(convbn(self.inplanes, 128, 3, 1, 1, 1),
+                                      nn.ReLU(inplace=True),
+                                      nn.Conv2d(128, 32, kernel_size=1, padding=0, stride=1, bias=False))
 
         self.dres0 = nn.Sequential(convbn_3d(64, 32, 3, 1, 1),
                                    nn.ReLU(inplace=True),
@@ -1748,8 +1751,8 @@ class DepthStereo(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, feat_left, feat_right):
-        feat_left = self.layer4(feat_left)
-        feat_right = self.layer4(feat_right)
+        feat_left = self.lastconv(feat_left)
+        feat_right = self.lastconv(feat_right)
 
         # matching
         cost = Variable(torch.FloatTensor(feat_left.size()[0],
@@ -2224,9 +2227,9 @@ class MaskRCNN(nn.Module):
             state_dict = torch.load(filepath)
             try:
                 self.load_state_dict(state_dict, strict=False)
-                for key in self.state_dict().keys():
-                    if key not in state_dict.keys():
-                        print('Uninitialized ', key)
+                # for key in self.state_dict().keys():
+                #     if key not in state_dict.keys():
+                #         print('Uninitialized ', key)
             except:
                 print('load only base model')
                 try:
