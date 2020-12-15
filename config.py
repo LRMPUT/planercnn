@@ -97,8 +97,12 @@ class Config(object):
     IMAGE_PADDING = True  # currently, the False option is not supported
 
     # Image mean (RGB)
-    MEAN_PIXEL = np.array([123.7, 116.8, 103.9])
+    # MEAN_PIXEL = np.array([123.7, 116.8, 103.9])
+    MEAN_PIXEL = np.array([0.485, 0.456, 0.406])
     MEAN_PIXEL_TENSOR = torch.from_numpy(MEAN_PIXEL.astype(np.float32))
+
+    STD_PIXEL = np.array([0.229, 0.224, 0.225])
+    STD_PIXEL_TENSOR = torch.from_numpy(STD_PIXEL.astype(np.float32))
 
     # Number of ROIs per image to feed to classifier/mask heads
     # The Mask RCNN paper uses 512 but often the RPN doesn't generate

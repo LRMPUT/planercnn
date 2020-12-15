@@ -105,23 +105,23 @@ class FPN(nn.Module):
         self.P6 = nn.MaxPool2d(kernel_size=1, stride=2)
         self.P5_conv1 = nn.Conv2d(2048, self.out_channels, kernel_size=1, stride=1)
         self.P5_conv2 = nn.Sequential(
-            SamePad2d(kernel_size=3, stride=1),
-            nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1),
+            # SamePad2d(kernel_size=3, stride=1),
+            nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1, padding=1),
         )
         self.P4_conv1 =  nn.Conv2d(1024, self.out_channels, kernel_size=1, stride=1)
         self.P4_conv2 = nn.Sequential(
-            SamePad2d(kernel_size=3, stride=1),
-            nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1),
+            # SamePad2d(kernel_size=3, stride=1),
+            nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1, padding=1),
         )
         self.P3_conv1 = nn.Conv2d(512, self.out_channels, kernel_size=1, stride=1)
         self.P3_conv2 = nn.Sequential(
-            SamePad2d(kernel_size=3, stride=1),
-            nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1),
+            # SamePad2d(kernel_size=3, stride=1),
+            nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1, padding=1),
         )
         self.P2_conv1 = nn.Conv2d(256, self.out_channels, kernel_size=1, stride=1)
         self.P2_conv2 = nn.Sequential(
-            SamePad2d(kernel_size=3, stride=1),
-            nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1),
+            # SamePad2d(kernel_size=3, stride=1),
+            nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1, padding=1),
         )
 
     def forward(self, x):
@@ -166,12 +166,12 @@ class Bottleneck(nn.Module):
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(Bottleneck, self).__init__()
-        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, stride=stride)
+        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, stride=stride, bias=False)
         self.bn1 = nn.BatchNorm2d(planes, eps=0.001, momentum=0.01)
-        self.padding2 = SamePad2d(kernel_size=3, stride=1)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3)
+        # self.padding2 = SamePad2d(kernel_size=3, stride=1)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(planes, eps=0.001, momentum=0.01)
-        self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1)
+        self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
         self.bn3 = nn.BatchNorm2d(planes * 4, eps=0.001, momentum=0.01)
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
@@ -184,7 +184,7 @@ class Bottleneck(nn.Module):
         out = self.bn1(out)
         out = self.relu(out)
 
-        out = self.padding2(out)
+        # out = self.padding2(out)
         out = self.conv2(out)
         out = self.bn2(out)
         out = self.relu(out)
@@ -211,11 +211,11 @@ class ResNet(nn.Module):
         self.stage5 = stage5
 
         self.C1 = nn.Sequential(
-            nn.Conv2d(numInputChannels, 64, kernel_size=7, stride=2, padding=3),
+            nn.Conv2d(numInputChannels, 64, kernel_size=7, stride=2, padding=3, bias=False),
             nn.BatchNorm2d(64, eps=0.001, momentum=0.01),
             nn.ReLU(inplace=True),
-            SamePad2d(kernel_size=3, stride=2),
-            nn.MaxPool2d(kernel_size=3, stride=2),
+            # SamePad2d(kernel_size=3, stride=2),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1, dilation=1, ceil_mode=False),
         )
         self.C2 = self.make_layer(self.block, 64, self.layers[0])
         self.C3 = self.make_layer(self.block, 128, self.layers[1], stride=2)
@@ -242,7 +242,7 @@ class ResNet(nn.Module):
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
                 nn.Conv2d(self.inplanes, planes * block.expansion,
-                          kernel_size=1, stride=stride),
+                          kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm2d(planes * block.expansion, eps=0.001, momentum=0.01),
             )
 
@@ -2224,6 +2224,9 @@ class MaskRCNN(nn.Module):
             state_dict = torch.load(filepath)
             try:
                 self.load_state_dict(state_dict, strict=False)
+                for key in self.state_dict().keys():
+                    if key not in state_dict.keys():
+                        print('Uninitialized ', key)
             except:
                 print('load only base model')
                 try:
@@ -3436,14 +3439,14 @@ def parse_image_meta_graph(meta):
     return [image_id, image_shape, window, active_class_ids]
 
 
-def mold_image(images, config):
-    """Takes RGB images with 0-255 values and subtraces
-    the mean pixel and converts it to float. Expects image
-    colors in RGB order.
-    """
-    return images.astype(np.float32) - config.MEAN_PIXEL
-
-
-def unmold_image(normalized_images, config):
-    """Takes a image normalized with mold() and returns the original."""
-    return (normalized_images + config.MEAN_PIXEL).astype(np.uint8)
+# def mold_image(images, config):
+#     """Takes RGB images with 0-255 values and subtraces
+#     the mean pixel and converts it to float. Expects image
+#     colors in RGB order.
+#     """
+#     return (images.astype(np.float32)/255.0 - config.MEAN_PIXEL) / config.STD_PIXEL
+#
+#
+# def unmold_image(normalized_images, config):
+#     """Takes a image normalized with mold() and returns the original."""
+#     return ((normalized_images * config.STD_PIXEL + config.MEAN_PIXEL) * 255.0).astype(np.uint8)

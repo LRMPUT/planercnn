@@ -600,7 +600,7 @@ def visualizeBatchSingle(options, config, images, image_metas, rpn_rois, depths,
 
 
 def visualizeBatchBoundary(options, config, images, boundary_pred, boundary_gt, indexOffset=0):
-    images = (images.detach().cpu().numpy().transpose((0, 2, 3, 1)) + config.MEAN_PIXEL).astype(np.uint8)
+    images = unmold_image(images.detach().cpu().numpy().transpose((0, 2, 3, 1)))
     boundary_pred = boundary_pred.detach().cpu().numpy()
     boundary_gt = boundary_gt.detach().cpu().numpy()
     for batchIndex in range(len(images)):
