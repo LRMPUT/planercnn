@@ -2681,7 +2681,7 @@ class MaskRCNN(nn.Module):
                     # class_parameters = class_parameters[idx, class_ids, :]
                     # detections[:, 6:9] = self.config.applyAnchorsTensor(class_ids, class_parameters)
 
-                    detection_support = torch.zeros((detection_boxes.shape[1], target_support.shape[1]),
+                    detection_support = torch.zeros((detection_boxes.shape[1], 4),
                                                     device=detection_boxes.device)
 
                     roi_features = roi_features[indices]
@@ -2715,7 +2715,7 @@ class MaskRCNN(nn.Module):
                     # class_parameters = class_parameters[idx, class_ids, :]
                     # detections[:, 6:9] = self.config.applyAnchorsTensor(class_ids, class_parameters)
 
-                    detection_support = torch.zeros((detection_boxes.shape[1], target_support.shape[1]),
+                    detection_support = torch.zeros((detection_boxes.shape[1], 4),
                                                     device=detection_boxes.device)
 
                     roi_features = roi_features[indices]                    
