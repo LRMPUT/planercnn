@@ -1696,7 +1696,7 @@ class DepthStereo(nn.Module):
         layers.append(block(self.inplanes, planes, stride, downsample, pad, dilation))
         self.inplanes = planes * block.expansion
         for i in range(1, blocks):
-            layers.append(block(self.inplanes, planes,1,None,pad,dilation))
+            layers.append(block(self.inplanes, planes, 1, None, pad, dilation))
 
         return nn.Sequential(*layers)
 
@@ -1925,7 +1925,7 @@ def compute_mrcnn_parameter_loss(target_parameters, target_class_ids, pred_param
     return loss
 
 
-def compute_mrcnn_support_loss(target_support, mrcnn_support, mrcnn_support_class, target_class_ids):
+def compute_mrcnn_support_loss(target_support, mrcnn_support, target_class_ids):
     if (target_class_ids > 0).sum() > 0:
         ## Only positive ROIs contribute to the loss. And only
         ## the class specific mask of each ROI.
@@ -1936,15 +1936,9 @@ def compute_mrcnn_support_loss(target_support, mrcnn_support, mrcnn_support_clas
         ## Gather the masks (predicted and true) that contribute to loss
         target_support_pos = target_support[positive_ix, :]
         mrcnn_support_pos = mrcnn_support[positive_ix, :]
-        target_support_class_pos = torch.where(target_support_pos > 0,
-                                               torch.zeros(1, dtype=torch.long, device=target_support.device),
-                                               torch.ones(1, dtype=torch.long, device=target_support.device))
-        mrcnn_support_class_pos = mrcnn_support_class[positive_ix, :]
 
-        mrcnn_support_pos = torch.where(target_support_pos > 0, mrcnn_support_pos[:, 0, :], mrcnn_support_pos[:, 1, :])
 
         loss_disp = F.smooth_l1_loss(mrcnn_support_pos, target_support_pos)
-        loss_class = F.cross_entropy(mrcnn_support_class_pos, target_support_class_pos)
         # if loss > 1 or torch.isnan(loss).any():
         #     print('\nsupport loss: ', loss.float())
         #     print('num rois: ', target_support_pos.shape[0])
@@ -1952,12 +1946,11 @@ def compute_mrcnn_support_loss(target_support, mrcnn_support, mrcnn_support_clas
         #     print('stddev target disp: ', torch.std(target_support_pos).float())
     else:
         loss_disp = torch.zeros(1, dtype=torch.float, device=target_support.device)
-        loss_class = torch.zeros(1, dtype=torch.float, device=target_support.device)
-    return loss_disp, loss_class
+    return loss_disp
 
 def compute_losses(config, rpn_match, rpn_bbox, rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits,
                    target_deltas, mrcnn_bbox, target_mask, mrcnn_mask, target_parameters, mrcnn_parameters,
-                   target_support, mrcnn_support, mrcnn_support_class):
+                   target_support, mrcnn_support):
 
     rpn_class_loss = compute_rpn_class_loss(rpn_match, rpn_class_logits)
     rpn_bbox_loss = compute_rpn_bbox_loss(rpn_bbox, rpn_match, rpn_pred_bbox)
@@ -1965,9 +1958,9 @@ def compute_losses(config, rpn_match, rpn_bbox, rpn_class_logits, rpn_pred_bbox,
     mrcnn_bbox_loss = compute_mrcnn_bbox_loss(target_deltas, target_class_ids, mrcnn_bbox)
     mrcnn_mask_loss = compute_mrcnn_mask_loss(config, target_mask, target_class_ids, target_parameters, mrcnn_mask)
     mrcnn_parameter_loss = 50*compute_mrcnn_parameter_loss(target_parameters, target_class_ids, mrcnn_parameters)
-    mrcnn_support_loss, mrcnn_support_class_loss = compute_mrcnn_support_loss(target_support, mrcnn_support, mrcnn_support_class, target_class_ids)
+    mrcnn_support_loss = compute_mrcnn_support_loss(target_support, mrcnn_support, target_class_ids)
     return [rpn_class_loss, rpn_bbox_loss, mrcnn_class_loss, mrcnn_bbox_loss, mrcnn_mask_loss, mrcnn_parameter_loss,
-            mrcnn_support_loss, mrcnn_support_class_loss]
+            mrcnn_support_loss]
 
 
 
@@ -2562,7 +2555,7 @@ class MaskRCNN(nn.Module):
                     mrcnn_mask = mrcnn_mask.cuda()
                     mrcnn_parameters = mrcnn_parameters.cuda()
                     mrcnn_support = mrcnn_support.cuda()
-                    mrcnn_support_class = mrcnn_support_class.cuda()
+                    # mrcnn_support_class = mrcnn_support_class.cuda()
             else:
                 ## Network Heads
                 ## Proposal classifier and BBox regressor heads
@@ -2588,14 +2581,15 @@ class MaskRCNN(nn.Module):
                 #                                                    size=(self.config.MASK_POOL_SIZE,
                 #                                                          self.config.MASK_POOL_SIZE),
                 #                                                    mode='nearest')
-                mrcnn_parameters = self.plane_params(disp_cost_vol,
+                mrcnn_support = self.plane_params(disp_cost_vol,
                                                       rois.unsqueeze(0),
                                                       writer=writer,
                                                       target=target_support,
                                                       target_class=target_class_ids,
                                                       target_params=target_parameters)
-                mrcnn_support = torch.zeros((target_support.shape[0], 2, target_support.shape[1]), device=target_support.device)
-                mrcnn_support_class = torch.zeros((target_support.shape[0], 2, target_support.shape[1]), device=target_support.device)
+
+                # mrcnn_support = torch.zeros((target_support.shape[0], 2, target_support.shape[1]), device=target_support.device)
+                # mrcnn_support_class = torch.zeros((target_support.shape[0], 2, target_support.shape[1]), device=target_support.device)
                 pass
 
             h, w = self.config.IMAGE_SHAPE[:2]
@@ -2743,7 +2737,7 @@ class MaskRCNN(nn.Module):
 
             info = [rpn_class_logits, rpn_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
                     target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, target_support, mrcnn_support,
-                    mrcnn_support_class, detections, detection_masks, detection_support,
+                    detections, detection_masks, detection_support,
                     roi_gt_class_ids, roi_gt_parameters, roi_gt_masks, rpn_rois, roi_features, roi_indices]
             if return_feature_map:
                 feature_map = mrcnn_feature_maps
