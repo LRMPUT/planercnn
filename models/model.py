@@ -1333,34 +1333,34 @@ class PlaneParams(nn.Module):
         #                        padding_mode='replicate')
 
         self.conv2 = nn.Conv3d(32,
-                               32,
+                               16,
                                kernel_size=3,
                                stride=(1, 2, 2),
                                padding=(1, 1, 1),
                                padding_mode='replicate')
 
-        self.conv3 = nn.Conv3d(32,
-                               32,
+        self.conv3 = nn.Conv3d(16,
+                               16,
                                kernel_size=3,
                                stride=(1, 1, 1),
                                padding=(1, 1, 1),
                                padding_mode='replicate')
 
-        self.conv4 = nn.Conv3d(32,
-                               32,
+        self.conv4 = nn.Conv3d(16,
+                               16,
                                kernel_size=3,
                                stride=(1, 2, 2),
                                padding=(1, 1, 1),
                                padding_mode='replicate')
 
-        self.conv5 = nn.Conv3d(32,
-                               32,
+        self.conv5 = nn.Conv3d(16,
+                               16,
                                kernel_size=3,
                                stride=(1, 1, 1),
                                padding=(1, 1, 1),
                                padding_mode='replicate')
 
-        self.conv6 = nn.Conv3d(32,
+        self.conv6 = nn.Conv3d(16,
                                1,
                                kernel_size=3,
                                stride=(1, 2, 2),
@@ -1372,12 +1372,12 @@ class PlaneParams(nn.Module):
     def forward(self, cost_vol, rois, writer=None, target=None, target_class=None, target_params=None):
 
         cost_vol = cost_vol.view(cost_vol.shape[0],
-                                 self.num_feats * self.config.MAXDISP,
+                                 self.num_feats * self.config.MAXDISP // 4,
                                  cost_vol.shape[3],
                                  cost_vol.shape[4])
 
         roi_feat = coordinates_roi([rois] + [cost_vol], self.pool_size, self.image_shape)
-        roi_feat = roi_feat.view(-1, self.num_feats, self.config.MAXDISP, self.pool_size, self.pool_size)
+        roi_feat = roi_feat.view(-1, self.num_feats, self.config.MAXDISP // 4, self.pool_size, self.pool_size)
 
         x = self.conv2(roi_feat)
         x = self.relu(x)
@@ -1388,10 +1388,10 @@ class PlaneParams(nn.Module):
         x = self.conv5(x)
         x = self.relu(x)
         x = self.conv6(x)
-        x = x.view(-1, self.config.MAXDISP, 2, 2)
+        x = x.view(-1, self.config.MAXDISP // 4, 2, 2)
 
         pred = F.softmax(x, dim=1)
-        pred1 = DisparityRegression(self.config.MAXDISP)(pred)
+        pred1 = 4 * DisparityRegression(self.config.MAXDISP // 4)(pred)
         pred1 = pred1.view(-1, 4)
 
         return pred1
@@ -1732,7 +1732,7 @@ class DepthStereo(nn.Module):
         pred = F.softmax(cost, dim=1)
         pred = DisparityRegression(self.maxdisp)(pred)
 
-        return pred
+        return pred, cost0
    
    
 ############################################################
@@ -2186,12 +2186,13 @@ class MaskRCNN(nn.Module):
                     print('change input dimension')
                     state_dict = {k: v for k, v in state_dict.items() if 'classifier.linear_class' not in k
                                   and 'classifier.linear_bbox' not in k
+                                  and 'classifier.linear_parameters' not in k
                                   and 'mask.conv5' not in k
                                   and 'mask.conv1' not in k
                                   # and 'fpn.C1.0' not in k
-                                  and 'classifier.conv1' not in k
-                                  and 'classifier.bn1' not in k
-                                  and 'rpn.conv_shared' not in k
+                                  # and 'classifier.conv1' not in k
+                                  # and 'classifier.bn1' not in k
+                                  # and 'rpn.conv_shared' not in k
                                   }
                     state = self.state_dict()
                     state.update(state_dict)
@@ -2547,7 +2548,7 @@ class MaskRCNN(nn.Module):
                 mrcnn_mask = Variable(torch.FloatTensor())
                 mrcnn_parameters = Variable(torch.FloatTensor())
                 mrcnn_support = Variable(torch.FloatTensor())
-                mrcnn_support_class = Variable(torch.FloatTensor())
+                # mrcnn_support_class = Variable(torch.FloatTensor())
                 if self.config.GPU_COUNT:
                     mrcnn_class_logits = mrcnn_class_logits.cuda()
                     mrcnn_class = mrcnn_class.cuda()
@@ -2794,8 +2795,9 @@ class AnchorScores(pl.LightningModule):
                     print('change input dimension')
                     state_dict = {k: v for k, v in state_dict.items() if 'classifier.linear_class' not in k
                                   and 'classifier.linear_bbox' not in k
-                                  and 'mask.conv5' not in k
-                                  and 'mask.conv1' not in k
+                                  and 'classifier.linear_parameters' not in k
+                                  # and 'mask.conv5' not in k
+                                  # and 'mask.conv1' not in k
                                   # and 'fpn.C1.0' not in k
                                   and 'classifier.conv1' not in k
                                   # and 'rpn.conv_shared' not in k
