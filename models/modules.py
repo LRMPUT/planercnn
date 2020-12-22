@@ -22,42 +22,42 @@ def get_support_ranges(camera, rois):
     h = camera[5]
 
     # cy is shifted in a padded image
-    # cy = cy + (w - h) / 2
+    cy = cy + (w - h) / 2
 
-    # rois_w = rois[:, 3] - rois[:, 1]
-    # rois_h = rois[:, 2] - rois[:, 0]
-    #
-    # support_x1 = (rois[:, 1] + rois_w / 4) * (w - 1)
-    # support_x2 = (rois[:, 1] + rois_w * 3 / 4) * (w - 1)
-    # # TODO Get full image (not cropped) shape somehow else
-    # support_y1 = (rois[:, 0] + rois_h / 4) * (w - 1)
-    # support_y2 = (rois[:, 0] + rois_h * 3 / 4) * (w - 1)
-    # support_ones = torch.ones_like(support_x1)
-    #
-    # support_ranges_pt1 = torch.stack([(support_x1 - cx) / fx,
-    #                                   support_ones,
-    #                                   -(support_y1 - cy) / fy], dim=1)
-    # support_ranges_pt2 = torch.stack([(support_x2 - cx) / fx,
-    #                                   support_ones,
-    #                                   -(support_y1 - cy) / fy], dim=1)
-    # support_ranges_pt3 = torch.stack([(support_x1 - cx) / fx,
-    #                                   support_ones,
-    #                                   -(support_y2 - cy) / fy], dim=1)
-    # support_ranges_pt4 = torch.stack([(support_x2 - cx) / fx,
-    #                                   support_ones,
-    #                                   -(support_y2 - cy) / fy], dim=1)
-    #
-    # support_ranges = torch.stack([support_ranges_pt1,
-    #                               support_ranges_pt2,
-    #                               support_ranges_pt3,
-    #                               support_ranges_pt4], dim=2)
+    rois_w = rois[:, 3] - rois[:, 1]
+    rois_h = rois[:, 2] - rois[:, 0]
 
-    support_ranges = torch.tensor([[[(0.0 - cx) / fx, (w - cx) / fx,
-                                     (0.0 - cx) / fx, (w - cx) / fx],
-                                    [1.0, 1.0,
-                                     1.0, 1.0],
-                                    [-(0.0 - cy) / fy, -(0.0 - cy) / fy,
-                                     -(h - cy) / fy, -(h - cy) / fy]]], dtype=torch.float, device=rois.device)
+    support_x1 = (rois[:, 1] + rois_w / 4) * (w - 1)
+    support_x2 = (rois[:, 1] + rois_w * 3 / 4) * (w - 1)
+    # TODO Get full image (not cropped) shape somehow else
+    support_y1 = (rois[:, 0] + rois_h / 4) * (w - 1)
+    support_y2 = (rois[:, 0] + rois_h * 3 / 4) * (w - 1)
+    support_ones = torch.ones_like(support_x1)
+
+    support_ranges_pt1 = torch.stack([(support_x1 - cx) / fx,
+                                      support_ones,
+                                      -(support_y1 - cy) / fy], dim=1)
+    support_ranges_pt2 = torch.stack([(support_x2 - cx) / fx,
+                                      support_ones,
+                                      -(support_y1 - cy) / fy], dim=1)
+    support_ranges_pt3 = torch.stack([(support_x1 - cx) / fx,
+                                      support_ones,
+                                      -(support_y2 - cy) / fy], dim=1)
+    support_ranges_pt4 = torch.stack([(support_x2 - cx) / fx,
+                                      support_ones,
+                                      -(support_y2 - cy) / fy], dim=1)
+
+    support_ranges = torch.stack([support_ranges_pt1,
+                                  support_ranges_pt2,
+                                  support_ranges_pt3,
+                                  support_ranges_pt4], dim=2)
+
+    # support_ranges = torch.tensor([[[(0.0 - cx) / fx, (w - cx) / fx,
+    #                                  (0.0 - cx) / fx, (w - cx) / fx],
+    #                                 [1.0, 1.0,
+    #                                  1.0, 1.0],
+    #                                 [-(0.0 - cy) / fy, -(0.0 - cy) / fy,
+    #                                  -(h - cy) / fy, -(h - cy) / fy]]], dtype=torch.float, device=rois.device)
 
     return support_ranges
 
@@ -214,17 +214,17 @@ def unmoldDetections(config, camera, detections, detection_masks, detection_supp
             pass
         detections = torch.cat([detections[:, :6], plane_parameters], dim=-1)
         pass
-    # if 'none' in config.ANCHOR_TYPE:
-    #     rois = detections[:, :4].clone()
-    #     # y
-    #     rois[:, [0, 2]] /= depth_np.shape[1]
-    #     # x
-    #     rois[:, [1, 3]] /= depth_np.shape[2]
-    #     plane_parameters = apply_support(config, camera, rois, detection_support)
-    #     plane_parameters = plane_parameters / torch.clamp(torch.norm(plane_parameters,
-    #                                                                  dim=-1,
-    #                                                                  keepdim=True).square(), 1e-4)
-    #     detections = torch.cat([detections[:, :6], plane_parameters], dim=-1)
+    if 'none' in config.ANCHOR_TYPE:
+        rois = detections[:, :4].clone()
+        # y
+        rois[:, [0, 2]] /= depth_np.shape[1]
+        # x
+        rois[:, [1, 3]] /= depth_np.shape[2]
+        plane_parameters = apply_support(config, camera, rois, detection_support)
+        plane_parameters = plane_parameters / torch.clamp(torch.norm(plane_parameters,
+                                                                     dim=-1,
+                                                                     keepdim=True).square(), 1e-4)
+        detections = torch.cat([detections[:, :6], plane_parameters], dim=-1)
     return detections, masks
 
 
