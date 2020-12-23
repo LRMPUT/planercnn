@@ -58,8 +58,8 @@ def train(options):
 
     print('the number of images', len(dataset))
 
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
-    # dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
+    # dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
     # dataloader_test = DataLoader(dataset_test, batch_size=1, shuffle=True)
 
     model = MaskRCNN(config)
@@ -167,10 +167,10 @@ def train(options):
                  rpn_rois, roi_features, roi_indices, feature_map, depth_np_pred, disp1_np_pred] = model.predict(
                         [input_pair[0]['image'], input_pair[0]['image_meta'], input_pair[0]['class_ids'],
                          input_pair[0]['bbox'], input_pair[0]['mask'], input_pair[0]['parameters'],
-                         input_pair[0]['camera'], None,
+                         input_pair[0]['camera'], input_pair[0]['depth'],
                          input_pair[1]['image']],
                         mode='training_detection', use_nms=2, use_refinement=False,
-                        return_feature_map=True)
+                        return_feature_map=True, writer=writer)
             else:
                 [rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox,
                  target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, target_support, mrcnn_support,

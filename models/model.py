@@ -1391,7 +1391,7 @@ class PlaneParams(nn.Module):
         x = x.view(-1, self.config.MAXDISP // 4, 2, 2)
 
         pred = F.softmax(x, dim=1)
-        pred1 = 4 * DisparityRegression(self.config.MAXDISP // 4)(pred)
+        pred1 = 4.0 * DisparityRegression(self.config.MAXDISP // 4)(pred)
         pred1 = pred1.view(-1, 4)
 
         return pred1
@@ -1634,39 +1634,70 @@ class DepthStereo(nn.Module):
         self.im_w = im_w
         self.inplanes = inplanes
 
+        self.relu = nn.ReLU(inplace=True)
         # self.layer4 = self._make_layer(BasicBlock, 32, 3, 1, 1, 1)
         self.lastconv = nn.Sequential(convbn(self.inplanes, 128, 3, 1, 1, 1),
                                       nn.ReLU(inplace=True),
                                       nn.Conv2d(128, 32, kernel_size=1, padding=0, stride=1, bias=False))
 
-        self.dres0 = nn.Sequential(convbn_3d(64, 32, 3, 1, 1),
-                                   nn.ReLU(inplace=True),
-                                   convbn_3d(32, 32, 3, 1, 1),
-                                   nn.ReLU(inplace=True))
-
-        self.dres1 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
-                                   nn.ReLU(inplace=True),
-                                   convbn_3d(32, 32, 3, 1, 1))
-
-        self.dres2 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
-                                   nn.ReLU(inplace=True),
-                                   convbn_3d(32, 32, 3, 1, 1))
-
-        self.dres3 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
-                                   nn.ReLU(inplace=True),
-                                   convbn_3d(32, 32, 3, 1, 1))
-
-        self.dres4 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
-                                   nn.ReLU(inplace=True),
-                                   convbn_3d(32, 32, 3, 1, 1))
-
-        self.classify = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
-                                      nn.ReLU(inplace=True),
-                                      nn.Conv3d(32, 1, kernel_size=3, padding=1, stride=1, bias=False))
-
+        # self.dres0 = nn.Sequential(convbn_3d(64, 32, 3, 1, 1),
+        #                            nn.ReLU(inplace=True),
+        #                            convbn_3d(32, 32, 3, 1, 1),
+        #                            nn.ReLU(inplace=True))
+        #
+        # self.dres1 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
+        #                            nn.ReLU(inplace=True),
+        #                            convbn_3d(32, 32, 3, 1, 1))
+        #
+        # self.dres2 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
+        #                            nn.ReLU(inplace=True),
+        #                            convbn_3d(32, 32, 3, 1, 1))
+        #
+        # self.dres3 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
+        #                            nn.ReLU(inplace=True),
+        #                            convbn_3d(32, 32, 3, 1, 1))
+        #
+        # self.dres4 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
+        #                            nn.ReLU(inplace=True),
+        #                            convbn_3d(32, 32, 3, 1, 1))
+        #
         # self.classify = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
         #                               nn.ReLU(inplace=True),
-        #                               convbn_3d(32, 1, 3, 1, 1))
+        #                               nn.Conv3d(32, 1, kernel_size=3, padding=1, stride=1, bias=False))
+
+        self.conv0a = nn.Sequential(nn.Conv3d(64, 32, kernel_size=3, padding=1, stride=1),
+                                    nn.ReLU(inplace=True))
+        self.conv0b = nn.Sequential(nn.Conv3d(32, 64, kernel_size=3, padding=1, stride=2),
+                                    nn.ReLU(inplace=True))
+
+        self.conv1a = nn.Sequential(nn.Conv3d(64, 64, kernel_size=3, padding=1, stride=1),
+                                    nn.ReLU(inplace=True))
+        self.conv1b = nn.Sequential(nn.Conv3d(64, 64, kernel_size=3, padding=1, stride=2),
+                                    nn.ReLU(inplace=True))
+
+        # self.conv2a = nn.Sequential(nn.Conv3d(64, 64, kernel_size=3, padding=1, stride=1),
+        #                             nn.ReLU(inplace=True))
+        # self.conv2b = nn.Sequential(nn.Conv3d(64, 128, kernel_size=3, padding=1, stride=2),
+        #                             nn.ReLU(inplace=True))
+        #
+        # self.deconv2 = nn.Sequential(nn.ConvTranspose3d(128, 64, kernel_size=3, padding=1, output_padding=1, stride=2),
+        #                             nn.ReLU(inplace=True))
+
+        self.deconv1 = nn.Sequential(nn.ConvTranspose3d(64, 64, kernel_size=3, padding=1, output_padding=1, stride=2),
+                                     nn.ReLU(inplace=True))
+
+        self.deconv0 = nn.Sequential(nn.ConvTranspose3d(64, 32, kernel_size=3, padding=1, output_padding=1, stride=2),
+                                     nn.ReLU(inplace=True))
+
+        self.deconv_c0 = nn.Sequential(nn.ConvTranspose3d(32, 8, kernel_size=3, padding=1, output_padding=1, stride=2),
+                                     nn.ReLU(inplace=True))
+
+        # self.deconv_c1 = nn.Sequential(nn.ConvTranspose3d(16, 1, kernel_size=3, padding=1, output_padding=1, stride=2),
+        #                              nn.ReLU(inplace=True))
+
+        self.deconv_c1 = nn.ConvTranspose3d(8, 1, kernel_size=3, padding=1, output_padding=1, stride=2)
+
+        # self.deconv_c2 = nn.Conv3d(32, 1, kernel_size=3, padding=1, stride=1)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -1720,19 +1751,37 @@ class DepthStereo(nn.Module):
                 cost[:, feat_left.size()[1]:, i, :, :] = feat_right
         cost = cost.contiguous()
 
-        cost0 = self.dres0(cost)
-        cost0 = self.dres1(cost0) + cost0
-        cost0 = self.dres2(cost0) + cost0
-        cost0 = self.dres3(cost0) + cost0
-        cost0 = self.dres4(cost0) + cost0
+        # cost0 = self.dres0(cost)
+        # cost0 = self.dres1(cost0) + cost0
+        # cost0 = self.dres2(cost0) + cost0
+        # cost0 = self.dres3(cost0) + cost0
+        # cost0 = self.dres4(cost0) + cost0
+        #
+        # cost = self.classify(cost0)
+        # cost = F.upsample(cost, [self.maxdisp, self.im_h, self.im_w], mode='trilinear')
+        # cost = torch.squeeze(cost, 1)
 
-        cost = self.classify(cost0)
-        cost = F.upsample(cost, [self.maxdisp, self.im_h, self.im_w], mode='trilinear')
-        cost = torch.squeeze(cost, 1)
-        pred = F.softmax(cost, dim=1)
+        cost0a = self.conv0a(cost)
+        cost0b = self.conv0b(cost0a)
+
+        cost1a = self.conv1a(cost0b)
+        cost1b = self.conv1b(cost1a)
+
+        # cost2a = self.conv2a(cost1b)
+        # cost2b = self.conv2b(cost2a)
+        #
+        # cost_d2 = self.relu(self.deconv2(cost2b) + cost2a)
+        cost_d1 = self.relu(self.deconv1(cost1b) + cost1a)
+        cost_d0 = self.relu(self.deconv0(cost_d1) + cost0a)
+
+        cost_c0 = self.deconv_c0(cost_d0)
+        cost_c1 = self.deconv_c1(cost_c0)
+        # cost_c2 = self.deconv_c2(cost_c1)
+
+        pred = F.softmax(cost_c1.squeeze(0), dim=1)
         pred = DisparityRegression(self.maxdisp)(pred)
 
-        return pred, cost0
+        return pred, cost_d0
    
    
 ############################################################
@@ -2188,7 +2237,8 @@ class MaskRCNN(nn.Module):
                                   and 'classifier.linear_bbox' not in k
                                   and 'classifier.linear_parameters' not in k
                                   and 'mask.conv5' not in k
-                                  and 'mask.conv1' not in k
+                                  and 'depth' not in k
+                                  # and 'mask.conv1' not in k
                                   # and 'fpn.C1.0' not in k
                                   # and 'classifier.conv1' not in k
                                   # and 'classifier.bn1' not in k
@@ -2371,24 +2421,42 @@ class MaskRCNN(nn.Module):
             if self.config.PREDICT_STEREO:
                 molded_images_r = input[8]
                 [p2_out_r, p3_out_r, p4_out_r, p5_out_r, p6_out_r] = self.fpn(molded_images_r)
-                if self.training:
-                    disp_np, disp_cost_vol = self.depth(p2_out, p2_out_r)
-                    disp_np = disp_np.unsqueeze(1)
-                else:
-                    disp_np, disp_cost_vol = self.depth(p2_out, p2_out_r)
-                    disp_np = disp_np.unsqueeze(1)
-                pass
+
+                disp_np, disp_cost_vol = self.depth(p2_out, p2_out_r)
+                disp_np = disp_np.unsqueeze(1)
+
                 # camera = input[6]
                 # fx = camera[0]
                 depth_np = fx * self.config.BASELINE / torch.clamp(disp_np, min=1.0e-4)
 
-                if writer is not None:
-                    min_l = p2_out.min()
-                    max_l = p2_out.max()
-                    min_r = p2_out_r.min()
-                    max_r = p2_out_r.max()
-                    writer.add_image('disp/feat_l', (p2_out[0, 0] - min_l)/(max_l - min_l), dataformats='HW')
-                    writer.add_image('disp/feat_r', (p2_out_r[0, 0] - min_r)/(max_r - min_r), dataformats='HW')
+                # mask = gt_disp < self.config.MAXDISP
+                # # disp_np_loss = 0.5 * F.smooth_l1_loss(disp1_np_pred[mask], gt_disp[mask], size_average=True) +\
+                # #                0.7 * F.smooth_l1_loss(disp2_np_pred[mask], gt_disp[mask], size_average=True) +\
+                # #                F.smooth_l1_loss(disp3_np_pred[mask], gt_disp[mask], size_average=True)
+                # disp_np_loss = F.smooth_l1_loss(disp_np[mask], gt_disp[mask], reduction='mean')
+                #
+                # if disp_np_loss > 4.0:
+                #
+                #     if writer is not None:
+                #         min_l = p2_out.min()
+                #         max_l = p2_out.max()
+                #         min_r = p2_out_r.min()
+                #         max_r = p2_out_r.max()
+                #         writer.add_image('disp/feat_l', (p2_out[0, 0] - min_l)/(max_l - min_l), dataformats='HW')
+                #         writer.add_image('disp/feat_r', (p2_out_r[0, 0] - min_r)/(max_r - min_r), dataformats='HW')
+                #
+                #         disp_error = (disp_np - gt_disp).abs() * mask
+                #         writer.add_image('disp/error_masked',
+                #                          drawDepthImage(disp_error.cpu().detach().numpy().squeeze(0).squeeze(0), maxDepth=60),
+                #                          dataformats='HWC')
+                #
+                #         image_l = unmold_image(molded_images.squeeze(0).permute(1, 2, 0).cpu().detach().numpy(), self.config)
+                #         writer.add_image('disp/image_left',
+                #                          image_l,
+                #                          dataformats='HWC')
+                #         writer.flush()
+                #         print(disp_np_loss)
+
             else:
                 depth_np = self.depth(feature_maps)
                 disp_np = fx * self.config.BASELINE / torch.clamp(depth_np, min=1.0e-4)

@@ -644,7 +644,7 @@ def drawSegmentationImage(segmentations, numColors=42, blackIndex=-1, blackThres
     return randomColor[segmentation.reshape(-1)].reshape((height, width, 3))
 
 ## Draw depth image
-def drawDepthImage(depth, maxDepth=5):
+def drawDepthImage(depth, maxDepth=10):
     depthImage = np.clip(depth / maxDepth * 255, 0, 255).astype(np.uint8)
     depthImage = cv2.applyColorMap(255 - depthImage, colormap=cv2.COLORMAP_JET)
     return depthImage
