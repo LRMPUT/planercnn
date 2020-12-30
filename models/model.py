@@ -461,7 +461,7 @@ def pyramid_roi_align(inputs, pool_size, image_shape):
     return pooled
 
 
-def coordinates_roi(inputs, pool_size, image_shape):
+def coordinates_roi(inputs, pool_size, image_shape, sampling_ratio=-1):
     """Implements ROI Pooling on multiple levels of the feature pyramid.
 
     Params:
@@ -496,7 +496,7 @@ def coordinates_roi(inputs, pool_size, image_shape):
 
     cooridnates = cooridnates.unsqueeze(0)  ## CropAndResizeFunction needs batch dimension
     # pooled_features = CropAndResizeFunction(pool_size, pool_size, 0)(cooridnates, boxes, ind)
-    pooled_features = roi_align(cooridnates, [boxes], (pool_size, pool_size))
+    pooled_features = roi_align(cooridnates, [boxes], (pool_size, pool_size), sampling_ratio=sampling_ratio)
 
     return pooled_features
 
@@ -1369,14 +1369,18 @@ class PlaneParams(nn.Module):
 
         self.values = None
 
-    def forward(self, cost_vol, rois, writer=None, target=None, target_class=None, target_params=None):
+    def forward(self, cost_vol, rois, mask,
+                writer=None, target=None, target_class=None, target_params=None, target_disp=None, target_mask=None):
 
         cost_vol = cost_vol.view(cost_vol.shape[0],
                                  self.num_feats * self.config.MAXDISP // 4,
                                  cost_vol.shape[3],
                                  cost_vol.shape[4])
 
-        roi_feat = coordinates_roi([rois] + [cost_vol], self.pool_size, self.image_shape)
+        roi_feat = coordinates_roi([rois] + [cost_vol], self.pool_size, self.image_shape, sampling_ratio=1)
+        # zero features for non planar region
+        nonmask_mask = torch.nonzero(mask[0, :, :, :] <= 0.5)
+        roi_feat[nonmask_mask[:, 0], :, nonmask_mask[:, 1], nonmask_mask[:, 2]] = 0
         roi_feat = roi_feat.view(-1, self.num_feats, self.config.MAXDISP // 4, self.pool_size, self.pool_size)
 
         x = self.conv2(roi_feat)
@@ -1393,6 +1397,40 @@ class PlaneParams(nn.Module):
         pred = F.softmax(x, dim=1)
         pred1 = 4.0 * DisparityRegression(self.config.MAXDISP // 4)(pred)
         pred1 = pred1.view(-1, 4)
+
+        # if writer is not None and \
+        #    target is not None and \
+        #    target_class is not None and \
+        #    target_params is not None:
+        #     if (target_class > 0).sum() > 0:
+        #         ## Only positive ROIs contribute to the loss. And only
+        #         ## the class specific mask of each ROI.
+        #         positive_ix = torch.nonzero(target_class > 0)[:, 0]
+        #         # positive_class_ids = target_class_ids[positive_ix.data].long()
+        #         # indices = torch.stack((positive_ix, positive_class_ids), dim=1)
+        #
+        #         ## Gather the masks (predicted and true) that contribute to loss
+        #         target_support_pos = target[positive_ix, :]
+        #         mrcnn_support_pos = pred1[positive_ix, :]
+        #
+        #         loss_disp = F.smooth_l1_loss(mrcnn_support_pos, target_support_pos)
+        #
+        #         if loss_disp > 1.0:
+        #             plane_parameters = apply_support(self.config,
+        #                                              self.config.METADATA,
+        #                                              rois.squeeze(0)[positive_ix, :],
+        #                                              target_support_pos)
+        #             plane_parameters = plane_parameters / torch.clamp(torch.norm(plane_parameters,
+        #                                                                          dim=-1,
+        #                                                                          keepdim=True).square(), 1e-4)
+        #             roi_disp = disp_roi_align([rois[:, positive_ix, :]] + [target_disp], 2).view(-1, 4)
+        #
+        #             roi_mask = target_mask[positive_ix][:, [7, 7, 21, 21], [7, 21, 7, 21]]
+        #
+        #             print('plane_parameters ', plane_parameters)
+        #             print('target_parameters ', target_params[positive_ix, :])
+        #
+        #             print(loss_disp)
 
         return pred1
 
@@ -2637,30 +2675,35 @@ class MaskRCNN(nn.Module):
                     mrcnn_feature_maps, rois.unsqueeze(0), ranges_feat, self.config, disp_np, pool_features=True, writer=writer)
                 ## Create masks for detections
                 mrcnn_mask, _ = self.mask(mrcnn_feature_maps, rois.unsqueeze(0), self.config, disp_np, writer=writer)
-                # target_mask_prob = torch.zeros((target_mask.shape[0],
-                #                                self.config.NUM_CLASSES,
-                #                                target_mask.shape[1],
-                #                                target_mask.shape[2]),
-                #                               dtype=torch.float,
-                #                               device=target_mask.device)
-                # target_mask_prob.scatter_(1,
-                #                           target_mask.unsqueeze(1).long(),
-                #                           torch.ones((target_mask.shape[0],
-                #                                       1,
-                #                                       target_mask.shape[1],
-                #                                       target_mask.shape[2]),
-                #                                      dtype=torch.float,
-                #                                      device=target_mask.device))
-                # target_mask_prob = torch.nn.functional.interpolate(target_mask_prob,
-                #                                                    size=(self.config.MASK_POOL_SIZE,
-                #                                                          self.config.MASK_POOL_SIZE),
-                #                                                    mode='nearest')
+                target_mask_prob = torch.zeros((target_mask.shape[0],
+                                               self.config.NUM_CLASSES,
+                                               target_mask.shape[1],
+                                               target_mask.shape[2]),
+                                              dtype=torch.float,
+                                              device=target_mask.device)
+                target_mask_prob.scatter_(1,
+                                          target_mask.unsqueeze(1).long(),
+                                          torch.ones((target_mask.shape[0],
+                                                      1,
+                                                      target_mask.shape[1],
+                                                      target_mask.shape[2]),
+                                                     dtype=torch.float,
+                                                     device=target_mask.device))
+                target_mask_prob = torch.nn.functional.interpolate(target_mask_prob,
+                                                                   size=(16,
+                                                                         16),
+                                                                   mode='nearest')
+                # probability of not being class 0
+                target_mask_prob = 1.0 - target_mask_prob[:, 0, :, :]
                 mrcnn_support = self.plane_params(disp_cost_vol,
-                                                      rois.unsqueeze(0),
-                                                      writer=writer,
-                                                      target=target_support,
-                                                      target_class=target_class_ids,
-                                                      target_params=target_parameters)
+                                                  rois.unsqueeze(0),
+                                                  target_mask_prob.unsqueeze(0),
+                                                  writer=writer,
+                                                  target=target_support,
+                                                  target_class=target_class_ids,
+                                                  target_params=target_parameters,
+                                                  target_disp=gt_disp,
+                                                  target_mask=target_mask)
 
                 # mrcnn_support = torch.zeros((target_support.shape[0], 2, target_support.shape[1]), device=target_support.device)
                 # mrcnn_support_class = torch.zeros((target_support.shape[0], 2, target_support.shape[1]), device=target_support.device)
@@ -2686,12 +2729,14 @@ class MaskRCNN(nn.Module):
                     detection_boxes = detection_boxes.unsqueeze(0)
                     detection_masks, _ = self.mask(mrcnn_feature_maps, detection_boxes, self.config,
                                                                       disp_np, writer=writer)
-                    # detection_masks_h = torch.nn.functional.interpolate(detection_masks,
-                    #                                                     size=(self.config.MASK_POOL_SIZE,
-                    #                                                           self.config.MASK_POOL_SIZE),
-                    #                                                     mode='nearest')
+                    detection_masks_h = torch.nn.functional.interpolate(detection_masks,
+                                                                        size=(16,
+                                                                              16),
+                                                                        mode='nearest')
+                    detection_masks_h = 1.0 - detection_masks_h[:, 0, :, :]
                     detection_support = self.plane_params(disp_cost_vol,
-                                                          detection_boxes)
+                                                          detection_boxes,
+                                                          detection_masks_h.unsqueeze(0))
 
                     roi_features = roi_features[indices]
                     pass
@@ -2709,8 +2754,14 @@ class MaskRCNN(nn.Module):
                     detection_masks, _ = self.mask(mrcnn_feature_maps, detection_boxes, self.config,
                                                                       disp_np, writer=writer)
 
+                    detection_masks_h = torch.nn.functional.interpolate(detection_masks,
+                                                                        size=(16,
+                                                                              16),
+                                                                        mode='nearest')
+                    detection_masks_h = 1.0 - detection_masks_h[:, 0, :, :]
                     detection_support = self.plane_params(disp_cost_vol,
-                                                          detection_boxes)
+                                                          detection_boxes,
+                                                          detection_masks_h.unsqueeze(0))
 
                     roi_features = roi_features[indices]                    
                     pass
