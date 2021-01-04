@@ -1672,83 +1672,47 @@ class DepthStereo(nn.Module):
         self.im_w = im_w
         self.inplanes = inplanes
 
-        self.relu = nn.ReLU(inplace=True)
         # self.layer4 = self._make_layer(BasicBlock, 32, 3, 1, 1, 1)
         self.lastconv = nn.Sequential(convbn(self.inplanes, 128, 3, 1, 1, 1),
                                       nn.ReLU(inplace=True),
                                       nn.Conv2d(128, 32, kernel_size=1, padding=0, stride=1, bias=False))
 
-        # self.dres0 = nn.Sequential(convbn_3d(64, 32, 3, 1, 1),
-        #                            nn.ReLU(inplace=True),
-        #                            convbn_3d(32, 32, 3, 1, 1),
-        #                            nn.ReLU(inplace=True))
-        #
-        # self.dres1 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
-        #                            nn.ReLU(inplace=True),
-        #                            convbn_3d(32, 32, 3, 1, 1))
-        #
-        # self.dres2 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
-        #                            nn.ReLU(inplace=True),
-        #                            convbn_3d(32, 32, 3, 1, 1))
-        #
-        # self.dres3 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
-        #                            nn.ReLU(inplace=True),
-        #                            convbn_3d(32, 32, 3, 1, 1))
-        #
-        # self.dres4 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
-        #                            nn.ReLU(inplace=True),
-        #                            convbn_3d(32, 32, 3, 1, 1))
-        #
+        self.dres0 = nn.Sequential(convbn_3d(64, 32, 3, 1, 1),
+                                   nn.ReLU(inplace=True),
+                                   convbn_3d(32, 32, 3, 1, 1),
+                                   nn.ReLU(inplace=True))
+
+        self.dres1 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
+                                   nn.ReLU(inplace=True),
+                                   convbn_3d(32, 32, 3, 1, 1))
+
+        self.dres2 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
+                                   nn.ReLU(inplace=True),
+                                   convbn_3d(32, 32, 3, 1, 1))
+
+        self.dres3 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
+                                   nn.ReLU(inplace=True),
+                                   convbn_3d(32, 32, 3, 1, 1))
+
+        self.dres4 = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
+                                   nn.ReLU(inplace=True),
+                                   convbn_3d(32, 32, 3, 1, 1))
+
+        self.classify = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
+                                      nn.ReLU(inplace=True),
+                                      nn.Conv3d(32, 1, kernel_size=3, padding=1, stride=1, bias=False))
+
         # self.classify = nn.Sequential(convbn_3d(32, 32, 3, 1, 1),
         #                               nn.ReLU(inplace=True),
-        #                               nn.Conv3d(32, 1, kernel_size=3, padding=1, stride=1, bias=False))
-
-        self.conv0a = nn.Sequential(nn.Conv3d(64, 32, kernel_size=3, padding=1, stride=1),
-                                    nn.ReLU(inplace=True))
-        self.conv0b = nn.Sequential(nn.Conv3d(32, 64, kernel_size=3, padding=1, stride=2),
-                                    nn.ReLU(inplace=True))
-
-        self.conv1a = nn.Sequential(nn.Conv3d(64, 64, kernel_size=3, padding=1, stride=1),
-                                    nn.ReLU(inplace=True))
-        self.conv1b = nn.Sequential(nn.Conv3d(64, 64, kernel_size=3, padding=1, stride=2),
-                                    nn.ReLU(inplace=True))
-
-        # self.conv2a = nn.Sequential(nn.Conv3d(64, 64, kernel_size=3, padding=1, stride=1),
-        #                             nn.ReLU(inplace=True))
-        # self.conv2b = nn.Sequential(nn.Conv3d(64, 128, kernel_size=3, padding=1, stride=2),
-        #                             nn.ReLU(inplace=True))
-        #
-        # self.deconv2 = nn.Sequential(nn.ConvTranspose3d(128, 64, kernel_size=3, padding=1, output_padding=1, stride=2),
-        #                             nn.ReLU(inplace=True))
-
-        self.deconv1 = nn.Sequential(nn.ConvTranspose3d(64, 64, kernel_size=3, padding=1, output_padding=1, stride=2),
-                                     nn.ReLU(inplace=True))
-
-        self.deconv0 = nn.Sequential(nn.ConvTranspose3d(64, 32, kernel_size=3, padding=1, output_padding=1, stride=2),
-                                     nn.ReLU(inplace=True))
-
-        self.deconv_c0 = nn.Sequential(nn.ConvTranspose3d(32, 8, kernel_size=3, padding=1, output_padding=1, stride=2),
-                                     nn.ReLU(inplace=True))
-
-        # self.deconv_c1 = nn.Sequential(nn.ConvTranspose3d(16, 1, kernel_size=3, padding=1, output_padding=1, stride=2),
-        #                              nn.ReLU(inplace=True))
-
-        self.deconv_c1 = nn.ConvTranspose3d(8, 1, kernel_size=3, padding=1, output_padding=1, stride=2)
-
-        # self.deconv_c2 = nn.Conv3d(32, 1, kernel_size=3, padding=1, stride=1)
+        #                               convbn_3d(32, 1, 3, 1, 1))
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(1.0 / n))
+                m.weight.data.normal_(0, math.sqrt(.5 / n))
             elif isinstance(m, nn.Conv3d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.kernel_size[2] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(1.0 / n))
-                m.bias.data.zero_()
-            elif isinstance(m, nn.ConvTranspose3d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.kernel_size[2] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(1.0 / n))
-                m.bias.data.zero_()
+                m.weight.data.normal_(0, math.sqrt(.5 / n))
             elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
@@ -1770,7 +1734,7 @@ class DepthStereo(nn.Module):
         layers.append(block(self.inplanes, planes, stride, downsample, pad, dilation))
         self.inplanes = planes * block.expansion
         for i in range(1, blocks):
-            layers.append(block(self.inplanes, planes, 1, None, pad, dilation))
+            layers.append(block(self.inplanes, planes,1,None,pad,dilation))
 
         return nn.Sequential(*layers)
 
@@ -1794,37 +1758,19 @@ class DepthStereo(nn.Module):
                 cost[:, feat_left.size()[1]:, i, :, :] = feat_right
         cost = cost.contiguous()
 
-        # cost0 = self.dres0(cost)
-        # cost0 = self.dres1(cost0) + cost0
-        # cost0 = self.dres2(cost0) + cost0
-        # cost0 = self.dres3(cost0) + cost0
-        # cost0 = self.dres4(cost0) + cost0
-        #
-        # cost = self.classify(cost0)
-        # cost = F.upsample(cost, [self.maxdisp, self.im_h, self.im_w], mode='trilinear')
-        # cost = torch.squeeze(cost, 1)
+        cost0 = self.dres0(cost)
+        cost0 = self.dres1(cost0) + cost0
+        cost0 = self.dres2(cost0) + cost0
+        cost0 = self.dres3(cost0) + cost0
+        cost0 = self.dres4(cost0) + cost0
 
-        cost0a = self.conv0a(cost)
-        cost0b = self.conv0b(cost0a)
-
-        cost1a = self.conv1a(cost0b)
-        cost1b = self.conv1b(cost1a)
-
-        # cost2a = self.conv2a(cost1b)
-        # cost2b = self.conv2b(cost2a)
-        #
-        # cost_d2 = self.relu(self.deconv2(cost2b) + cost2a)
-        cost_d1 = self.relu(self.deconv1(cost1b) + cost1a)
-        cost_d0 = self.relu(self.deconv0(cost_d1) + cost0a)
-
-        cost_c0 = self.deconv_c0(cost_d0)
-        cost_c1 = self.deconv_c1(cost_c0)
-        # cost_c2 = self.deconv_c2(cost_c1)
-
-        pred = F.softmax(cost_c1.squeeze(0), dim=1)
+        cost = self.classify(cost0)
+        cost = F.upsample(cost, [self.maxdisp, self.im_h, self.im_w], mode='trilinear')
+        cost = torch.squeeze(cost, 1)
+        pred = F.softmax(cost, dim=1)
         pred = DisparityRegression(self.maxdisp)(pred)
 
-        return pred, cost_d0
+        return pred, cost0
    
    
 ############################################################
@@ -2276,11 +2222,13 @@ class MaskRCNN(nn.Module):
                     self.load_state_dict(state)
                 except:
                     print('change input dimension')
-                    state_dict = {k: v for k, v in state_dict.items() if 'classifier.linear_class' not in k
-                                  and 'classifier.linear_bbox' not in k
-                                  and 'classifier.linear_parameters' not in k
-                                  and 'mask.conv5' not in k
-                                  and 'depth' not in k
+                    state_dict = {k: v for k, v in state_dict.items()
+                                  if 'plane_params' not in k
+                                  # and 'classifier.linear_class' not in k
+                                  # and 'classifier.linear_bbox' not in k
+                                  # and 'classifier.linear_parameters' not in k
+                                  # and 'mask.conv5' not in k
+                                  # and 'depth' not in k
                                   # and 'mask.conv1' not in k
                                   # and 'fpn.C1.0' not in k
                                   # and 'classifier.conv1' not in k
