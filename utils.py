@@ -753,6 +753,8 @@ def fit_plane_ransac_torch(points):
         if cur_inliers.float() / points.shape[0] > 0.9:
             break
 
+    if best_inliers < 3:
+        print('best_inliers', best_inliers)
     best_plane = fit_plane_torch(points[best_inliers_mask])
 
     return best_inliers_mask, best_plane

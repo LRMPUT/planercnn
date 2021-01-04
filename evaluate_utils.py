@@ -119,23 +119,32 @@ def evaluatePlanesTensor(input_dict, detection_dict, printInfo=False, use_gpu=Tr
 
 
 def evaluatePlaneDist(config, input_dict, detection_dict, printInfo=False):
-    masks, planes, depth_gt = detection_dict['detection_gt_masks'], detection_dict['detection'][:, 6:9], input_dict['depth']
+    masks_gt, planes, depth_gt = detection_dict['detection_gt_masks'], detection_dict['detection'][:, 6:9], input_dict['depth']
     target_params = detection_dict['detection_gt_parameters']
+    depth = detection_dict['depth_np']
+    masks = detection_dict['masks']
 
-    masks_cropped = masks[:, 80:560]
+    masks_cropped = masks_gt[:, 80:560]
     ranges = config.getRanges(input_dict['camera']).transpose(1, 2).transpose(0, 1)
     bin_width = 50
-    dists_hist = torch.zeros(masks.shape[2] // bin_width + 1, dtype=torch.float, device=masks.device, requires_grad=False)
-    dists_cnt = torch.zeros(masks.shape[2] // bin_width + 1, dtype=torch.float, device=masks.device, requires_grad=False)
+    dists_hist = torch.zeros(masks_gt.shape[2] // bin_width + 1, dtype=torch.float, device=masks_gt.device, requires_grad=False)
+    dists_cnt = torch.zeros(masks_gt.shape[2] // bin_width + 1, dtype=torch.float, device=masks_gt.device, requires_grad=False)
 
     XYZ = ranges * depth_gt[:, 80:560]
+    XYZ_pred = ranges * depth[:, 80:560]
     dists = None
-    for m in range(masks.shape[0]):
+    for m in range(masks_gt.shape[0]):
         # gt points belonging to the plane
-        XYZ_plane = XYZ[:, masks[m, 80:560, :] > 0.5]
-        if XYZ_plane.shape[1] >= 500:
-            # relative to a point on the plane
-            XYZ_plane_rel = XYZ_plane - planes[m, :, None]
+        XYZ_plane_gt = XYZ[:, masks_gt[m, 80:560, :] > 0.5]
+        XYZ_plane = XYZ_pred[:, masks[m, 80:560, :] > 0.5]
+        if XYZ_plane_gt.shape[1] >= 500:
+            # _, plane = fit_plane_ransac_torch(XYZ_plane.transpose(0, 1))
+            # plane = plane / plane.norm().square()
+            # normal = plane / plane.norm()
+            # # relative to a point on the plane
+            # XYZ_plane_rel = XYZ_plane_gt - plane[:, None]
+
+            XYZ_plane_rel = XYZ_plane_gt - planes[m, :, None]
             normal = planes[m] / planes[m].norm()
             # normal = target_params[m] / target_params[m].norm()
             # dot product with normal
@@ -145,13 +154,13 @@ def evaluatePlaneDist(config, input_dict, detection_dict, printInfo=False):
             else:
                 dists = torch.cat([dists, cur_dists])
 
-            area = XYZ_plane.shape[1]
+            area = XYZ_plane_gt.shape[1]
             bin_idx = int(np.sqrt(area) // bin_width)
             dists_hist[bin_idx] += cur_dists.square().mean().sqrt()
             dists_cnt[bin_idx] += 1.0
 
             if cur_dists.square().mean().sqrt() > 1.0 and bin_idx > 0:
-                _, plane_gt = fit_plane_ransac_torch(XYZ_plane.transpose(0, 1))
+                _, plane_gt = fit_plane_ransac_torch(XYZ_plane_gt.transpose(0, 1))
                 plane_gt = plane_gt / (plane_gt.norm() * plane_gt.norm())
                 print(plane_gt)
                 print(planes[m])
@@ -168,25 +177,33 @@ def evaluatePlaneDist(config, input_dict, detection_dict, printInfo=False):
 
 
 def evaluatePlaneNorm(config, input_dict, detection_dict, printInfo=False):
-    masks, planes, depth_gt = detection_dict['detection_gt_masks'], detection_dict['detection'][:, 6:9], input_dict['depth']
+    masks_gt, planes, depth_gt = detection_dict['detection_gt_masks'], detection_dict['detection'][:, 6:9], input_dict['depth']
+    depth = detection_dict['depth_np']
+    masks = detection_dict['masks']
     target_class_ids = detection_dict['detection_gt_class_ids']
     pred_class_ids = detection_dict['detection'][:, 4]
     target_params = detection_dict['detection_gt_parameters']
 
-    masks_cropped = masks[:, 80:560]
+    masks_cropped = masks_gt[:, 80:560]
     ranges = config.getRanges(input_dict['camera']).transpose(1, 2).transpose(0, 1)
     bin_width = 50
-    dists_hist = torch.zeros(masks.shape[2] // bin_width + 1, dtype=torch.float, device=masks.device, requires_grad=False)
-    dists_cnt = torch.zeros(masks.shape[2] // bin_width + 1, dtype=torch.float, device=masks.device, requires_grad=False)
+    dists_hist = torch.zeros(masks_gt.shape[2] // bin_width + 1, dtype=torch.float, device=masks_gt.device, requires_grad=False)
+    dists_cnt = torch.zeros(masks_gt.shape[2] // bin_width + 1, dtype=torch.float, device=masks_gt.device, requires_grad=False)
 
     XYZ = ranges * depth_gt[:, 80:560]
+    XYZ_pred = ranges * depth[:, 80:560]
     dists = None
-    for m in range(masks.shape[0]):
+    for m in range(masks_gt.shape[0]):
         # gt points belonging to the plane
-        XYZ_plane = XYZ[:, masks[m, 80:560, :] > 0.5]
-        if XYZ_plane.shape[1] >= 500:
-            _, plane_gt = fit_plane_ransac_torch(XYZ_plane.transpose(0, 1))
+        XYZ_plane_gt = XYZ[:, masks_gt[m, 80:560, :] > 0.5]
+        XYZ_plane = XYZ_pred[:, masks[m, 80:560, :] > 0.5]
+        if XYZ_plane_gt.shape[1] >= 500:
+            _, plane_gt = fit_plane_ransac_torch(XYZ_plane_gt.transpose(0, 1))
             normal_gt = plane_gt / plane_gt.norm()
+
+            # _, plane = fit_plane_ransac_torch(XYZ_plane.transpose(0, 1))
+            # normal = plane / plane.norm()
+
             normal = planes[m] / planes[m].norm()
             # normal = target_params[m] / target_params[m].norm()
             # dot product between normals -> angle between normals
@@ -197,12 +214,12 @@ def evaluatePlaneNorm(config, input_dict, detection_dict, printInfo=False):
             else:
                 dists = torch.cat([dists, cur_dist[None]])
 
-            area = XYZ_plane.shape[1]
+            area = XYZ_plane_gt.shape[1]
             bin_idx = int(np.sqrt(area) // bin_width)
             dists_hist[bin_idx] += cur_dist
             dists_cnt[bin_idx] += 1.0
         # else:
-        #     print(XYZ_plane.shape)
+        #     print(XYZ_plane_gt.shape)
 
     statistics = []
     statistics.extend([float(dists.mean())])
