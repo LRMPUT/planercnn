@@ -105,23 +105,23 @@ class FPN(nn.Module):
         self.P6 = nn.MaxPool2d(kernel_size=1, stride=2)
         self.P5_conv1 = nn.Conv2d(2048, self.out_channels, kernel_size=1, stride=1)
         self.P5_conv2 = nn.Sequential(
-            # SamePad2d(kernel_size=3, stride=1),
-            nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1, padding=1),
+                SamePad2d(kernel_size=3, stride=1),
+                nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1),
         )
-        self.P4_conv1 =  nn.Conv2d(1024, self.out_channels, kernel_size=1, stride=1)
+        self.P4_conv1 = nn.Conv2d(1024, self.out_channels, kernel_size=1, stride=1)
         self.P4_conv2 = nn.Sequential(
-            # SamePad2d(kernel_size=3, stride=1),
-            nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1, padding=1),
+                SamePad2d(kernel_size=3, stride=1),
+                nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1),
         )
         self.P3_conv1 = nn.Conv2d(512, self.out_channels, kernel_size=1, stride=1)
         self.P3_conv2 = nn.Sequential(
-            # SamePad2d(kernel_size=3, stride=1),
-            nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1, padding=1),
+                SamePad2d(kernel_size=3, stride=1),
+                nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1),
         )
         self.P2_conv1 = nn.Conv2d(256, self.out_channels, kernel_size=1, stride=1)
         self.P2_conv2 = nn.Sequential(
-            # SamePad2d(kernel_size=3, stride=1),
-            nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1, padding=1),
+                SamePad2d(kernel_size=3, stride=1),
+                nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1),
         )
 
     def forward(self, x):
@@ -164,14 +164,15 @@ class FPN(nn.Module):
 class Bottleneck(nn.Module):
     expansion = 4
 
+
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(Bottleneck, self).__init__()
-        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, stride=stride, bias=False)
+        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, stride=stride)
         self.bn1 = nn.BatchNorm2d(planes, eps=0.001, momentum=0.01)
-        # self.padding2 = SamePad2d(kernel_size=3, stride=1)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, padding=1, bias=False)
+        self.padding2 = SamePad2d(kernel_size=3, stride=1)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3)
         self.bn2 = nn.BatchNorm2d(planes, eps=0.001, momentum=0.01)
-        self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
+        self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1)
         self.bn3 = nn.BatchNorm2d(planes * 4, eps=0.001, momentum=0.01)
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
@@ -184,7 +185,7 @@ class Bottleneck(nn.Module):
         out = self.bn1(out)
         out = self.relu(out)
 
-        # out = self.padding2(out)
+        out = self.padding2(out)
         out = self.conv2(out)
         out = self.bn2(out)
         out = self.relu(out)
@@ -211,11 +212,11 @@ class ResNet(nn.Module):
         self.stage5 = stage5
 
         self.C1 = nn.Sequential(
-            nn.Conv2d(numInputChannels, 64, kernel_size=7, stride=2, padding=3, bias=False),
-            nn.BatchNorm2d(64, eps=0.001, momentum=0.01),
-            nn.ReLU(inplace=True),
-            # SamePad2d(kernel_size=3, stride=2),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1, dilation=1, ceil_mode=False),
+                nn.Conv2d(numInputChannels, 64, kernel_size=7, stride=2, padding=3),
+                nn.BatchNorm2d(64, eps=0.001, momentum=0.01),
+                nn.ReLU(inplace=True),
+                SamePad2d(kernel_size=3, stride=2),
+                nn.MaxPool2d(kernel_size=3, stride=2),
         )
         self.C2 = self.make_layer(self.block, 64, self.layers[0])
         self.C3 = self.make_layer(self.block, 128, self.layers[1], stride=2)
@@ -233,7 +234,6 @@ class ResNet(nn.Module):
         x = self.C5(x)
         return x
 
-
     def stages(self):
         return [self.C1, self.C2, self.C3, self.C4, self.C5]
 
@@ -241,9 +241,9 @@ class ResNet(nn.Module):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                nn.Conv2d(self.inplanes, planes * block.expansion,
-                          kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(planes * block.expansion, eps=0.001, momentum=0.01),
+                    nn.Conv2d(self.inplanes, planes * block.expansion,
+                              kernel_size=1, stride=stride),
+                    nn.BatchNorm2d(planes * block.expansion, eps=0.001, momentum=0.01),
             )
 
         layers = []
@@ -2039,9 +2039,9 @@ class MaskRCNN(nn.Module):
         ## Bottom-up Layers
         ## Returns a list of the last layers of each stage, 5 in total.
         ## Don't create the thead (stage 5), so we pick the 4th item in the list.
-        # resnet = ResNet("resnet101", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
+        resnet = ResNet("resnet101", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
         # resnet = ResNet("resnet101", stage5=True, numInputChannels=3)
-        resnet = ResNet("resnet50", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
+        # resnet = ResNet("resnet50", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
         C1, C2, C3, C4, C5 = resnet.stages()
 
         ## Top-down Layers
@@ -2223,16 +2223,16 @@ class MaskRCNN(nn.Module):
                 except:
                     print('change input dimension')
                     state_dict = {k: v for k, v in state_dict.items()
-                                  if 'plane_params' not in k
-                                  # and 'classifier.linear_class' not in k
+                                  # if 'plane_params' not in k
+                                  if 'classifier.linear_class' not in k
                                   # and 'classifier.linear_bbox' not in k
-                                  # and 'classifier.linear_parameters' not in k
-                                  # and 'mask.conv5' not in k
+                                  and 'classifier.linear_parameters' not in k
+                                  and 'mask.conv5' not in k
                                   # and 'depth' not in k
-                                  # and 'mask.conv1' not in k
+                                  and 'mask.conv1' not in k
                                   # and 'fpn.C1.0' not in k
-                                  # and 'classifier.conv1' not in k
-                                  # and 'classifier.bn1' not in k
+                                  and 'classifier.conv1' not in k
+                                  and 'classifier.bn1' not in k
                                   # and 'rpn.conv_shared' not in k
                                   }
                     state = self.state_dict()
