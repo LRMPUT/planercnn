@@ -124,6 +124,7 @@ class Config(object):
     # Pooled ROIs
     POOL_SIZE = 7
     MASK_POOL_SIZE = 14
+    PARAM_POOL_SIZE = 16
     MASK_SHAPE = [28, 28]
     SUPPORT_SHAPE = [2, 2]
     FINAL_MASK_SHAPE = [224, 224]  # (height, width) of the mini-mask
@@ -249,7 +250,7 @@ class Config(object):
         ## Load cluster centers to serve as the anchors
         self.ANCHOR_TYPE = anchor_type
         with torch.no_grad():
-            if self.ANCHOR_TYPE == 'none':
+            if self.ANCHOR_TYPE == 'none' or 'none_exp_' in self.ANCHOR_TYPE:
                 self.NUM_CLASSES = 2
                 self.NUM_PARAMETERS = 3
             elif self.ANCHOR_TYPE == 'joint':

@@ -726,9 +726,8 @@ def fit_plane_ransac(points):
     return best_inliers_mask, best_plane
 
 
-def fit_plane_ransac_torch(points):
+def fit_plane_ransac_torch(points, plane_diff_threshold=0.01, absolute=False):
     num_iter = 50
-    plane_diff_threshold = 0.01
 
     best_inliers = 0
     best_inliers_mask = None
@@ -742,6 +741,45 @@ def fit_plane_ransac_torch(points):
 
         # relative distance to the plane
         diff = torch.abs(torch.matmul(points, cur_plane).view(-1) - torch.ones(points.shape[0], device=points.device))
+        if absolute:
+            diff = diff / cur_plane.norm()
+        inlier_mask = diff < plane_diff_threshold
+
+        cur_inliers = inlier_mask.sum()
+        if cur_inliers > best_inliers:
+            best_inliers = cur_inliers
+            best_inliers_mask = inlier_mask
+
+        # if enough inliers
+        if cur_inliers.float() / points.shape[0] > 0.9:
+            break
+
+    if best_inliers < 3:
+        print('best_inliers', best_inliers)
+        best_plane = torch.zeros(3, dtype=torch.float, device=points.device)
+    else:
+        best_plane = fit_plane_torch(points[best_inliers_mask])
+
+    return best_inliers_mask, best_plane
+
+
+def fit_plane_dist_ransac_torch(points, normal, plane_diff_threshold=0.01, absolute=False):
+    num_iter = 50
+    normal = normal / normal.norm()
+
+    best_inliers = 0
+    best_inliers_mask = None
+    for i in range(num_iter):
+        cur_idx = torch.randint(points.shape[0])
+        cur_point = points[cur_idx]
+
+        cur_d = cur_point.dot(normal)
+        cur_plane = normal / cur_d
+
+        # relative distance to the plane
+        diff = torch.abs(torch.matmul(points, cur_plane).view(-1) - torch.ones(points.shape[0], device=points.device))
+        if absolute:
+            diff = diff / cur_plane.norm()
         inlier_mask = diff < plane_diff_threshold
 
         cur_inliers = inlier_mask.sum()

@@ -257,7 +257,7 @@ class ScenenetRgbdDatasetSingle(Dataset):
             if m.sum() < 1:
                 continue
             instance_masks.append(m)
-            if self.config.ANCHOR_TYPE == 'none':
+            if self.config.ANCHOR_TYPE == 'none' or 'none_exp_' in self.config.ANCHOR_TYPE:
                 class_ids.append(1)
                 parameters.append(np.concatenate([plane, np.zeros(1)], axis=0))
             elif 'joint' in self.config.ANCHOR_TYPE:

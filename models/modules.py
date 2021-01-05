@@ -214,7 +214,7 @@ def unmoldDetections(config, camera, detections, detection_masks, detection_supp
             pass
         detections = torch.cat([detections[:, :6], plane_parameters], dim=-1)
         pass
-    if 'none' in config.ANCHOR_TYPE:
+    if config.ANCHOR_TYPE == 'none_exp_sup':
         rois = detections[:, :4].clone()
         # y
         rois[:, [0, 2]] /= depth_np.shape[1]
@@ -225,6 +225,44 @@ def unmoldDetections(config, camera, detections, detection_masks, detection_supp
                                                                      dim=-1,
                                                                      keepdim=True).square(), 1e-4)
         detections = torch.cat([detections[:, :6], plane_parameters], dim=-1)
+    elif config.ANCHOR_TYPE == 'none_exp_uvd':
+        rois = detections[:, :4].clone()
+        fx = camera[0]
+        fy = camera[1]
+        cx = camera[2]
+        cy = camera[3]
+        dcy = (camera[4] - camera[5]) / 2
+        disp_np = fx * config.BASELINE / torch.clamp(depth_np, min=1.0e-4)
+        h = disp_np.shape[1]
+        w = disp_np.shape[2]
+        # rois[:, [0, 2]] = rois[:, [0, 2]].clamp(min=0, max=h)
+        # rois[:, [1, 3]] = rois[:, [1, 3]].clamp(min=0, max=w)
+        us = torch.arange(0, w, device=rois.device) - cx
+        vs = torch.arange(0, h, device=rois.device) - cy - dcy
+        pts_uvd = torch.stack([us.view(1, -1).repeat(h, 1),
+                              vs.view(-1, 1).repeat(1, w),
+                              disp_np.view(h, w)], dim=0)
+        G_xyz_uvd = torch.tensor([[fx, 0, 0, 0],
+                                  [0, 0, 0, 1],
+                                  [0, -fy, 0, 0],
+                                  [0, 0, config.BASELINE * fx, 0]], device=rois.device)
+        for m in rois.shape[0]:
+            cur_pts = pts_uvd[:, masks[m] > 0.5]
+            cur_normal = torch.cat([detection_support[m], 1.0], dim=-1)
+            _, cur_plane = utils.fit_plane_dist_ransac_torch(cur_pts.transpose(0, 1),
+                                                             cur_normal,
+                                                             plane_diff_threshold=2,
+                                                             absolute=True)
+            plane_offset = 1.0 / torch.clamp(cur_plane.norm(), min=1e-4)
+            plane_normal = cur_plane / plane_offset
+            plane_eq = torch.cat([plane_normal, -plane_offset])
+
+            plane_eq_xyz = G_xyz_uvd.matmul(plane_eq.view(4, 1))
+
+            plane_parameters = plane_eq_xyz[0:3, 0] * (-plane_eq_xyz[3, 0])
+
+            detections = torch.cat([detections[:, :6], plane_parameters], dim=-1)
+
     return detections, masks
 
 
