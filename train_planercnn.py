@@ -33,8 +33,8 @@ from config import PlaneConfig
 
 def train(options):
     cv2.setNumThreads(0)
-    # torch.manual_seed(13)
-    # np.random.seed(13)
+    torch.manual_seed(13)
+    np.random.seed(13)
 
     if not os.path.exists(options.checkpoint_dir):
         os.system("mkdir -p %s"%options.checkpoint_dir)
@@ -58,8 +58,8 @@ def train(options):
 
     print('the number of images', len(dataset))
 
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
-    # dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
+    # dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
     # dataloader_test = DataLoader(dataset_test, batch_size=1, shuffle=True)
 
     model = MaskRCNN(config)

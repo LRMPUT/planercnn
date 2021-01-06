@@ -726,6 +726,50 @@ def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_param
             # only nu/nd and nv/nd
             support = roi_gt_plane_eq_uvd[:, 0:2] / roi_gt_plane_eq_uvd[:, 2:3]
 
+            final_masks = []
+            for m in range(masks.shape[0]):
+                # box = (positive_rois[m].clone() * w).long()
+                box = (roi_gt_boxes[m].clone() * w).long()
+                if (box[2] - box[0]) * (box[3] - box[1]) <= 0:
+                    continue
+
+                # mask = masks[m]
+                mask = roi_masks[m]
+                mask = mask.unsqueeze(0).unsqueeze(0)
+                mask = F.upsample(mask, size=(box[2] - box[0], box[3] - box[1]), mode='bilinear')
+                mask = mask.squeeze(0).squeeze(0)
+
+                final_mask = torch.zeros(int(w), int(w)).cuda()
+                final_mask[box[0]:box[2], box[1]:box[3]] = mask
+                final_masks.append(final_mask)
+                continue
+            final_masks = torch.stack(final_masks, dim=0)
+
+            ranges = config.getRangesFull(camera).transpose(1, 2).transpose(0, 1)
+            XYZ = ranges * fx * config.BASELINE / disp.view(int(w), int(w))
+
+            for m in range(masks.shape[0]):
+                cur_pts_xyz = XYZ[:, torch.logical_and(final_masks[m] > 0.5,
+                                                       disp.view(int(w), int(w)) < config.MAXDISP)]
+
+                inlier_mask_xyz, cur_plane_xyz = utils.fit_plane_ransac_torch(cur_pts_xyz.transpose(0, 1),
+                                                                              plane_diff_threshold=0.05,
+                                                                              absolute=True)
+                cur_parameters_xyz = cur_plane_xyz / cur_plane_xyz.norm(dim=-1, keepdim=True).square()
+                if (cur_parameters_xyz - roi_gt_parameters[m]).norm() > 0.1:
+                    cur_pts_demean = cur_pts_xyz - cur_pts_xyz.mean(dim=-1, keepdim=True)
+                    (U, D, V) = torch.svd(cur_pts_demean.transpose(0, 1)[inlier_mask_xyz])
+
+                    print('\n', (cur_parameters_xyz - roi_gt_parameters[m]).norm())
+                    print(cur_parameters_xyz)
+                    print(roi_gt_parameters[m])
+                    print(cur_plane_xyz / cur_plane_xyz.norm(dim=-1, keepdim=True))
+                    print(float(inlier_mask_xyz.sum()) / inlier_mask_xyz.shape[0])
+                    print('U = ', U)
+                    print('V = ', V)
+                    print('D = ', D)
+                    print('stop')
+
             # ranges = config.getRangesFull(camera).transpose(1, 2).transpose(0, 1)
             # ranges_rois = roi_align(ranges.view(1, 3, ranges.shape[1], ranges.shape[2]),
             #                         [positive_rois],
@@ -1441,6 +1485,8 @@ class PlaneParams(nn.Module):
                 positive_ix = torch.nonzero(target_class > 0)[:, 0]
                 # positive_class_ids = target_class_ids[positive_ix.data].long()
                 # indices = torch.stack((positive_ix, positive_class_ids), dim=1)
+                target_support_pos = target[positive_ix, :]
+                mrcnn_support_pos = pred1[positive_ix, :]
 
                 final_masks = []
                 for m in range(positive_ix.shape[0]):
@@ -1470,16 +1516,51 @@ class PlaneParams(nn.Module):
                     cur_pts = pts_uvd[:, torch.logical_and(final_masks[m] > 0.5,
                                                            target_disp.view(h, w) < self.config.MAXDISP)]
 
-                    _, cur_plane = utils.fit_plane_ransac_torch(cur_pts.transpose(0, 1),
-                                                                plane_diff_threshold=2,
+                    inlier_mask, cur_plane = utils.fit_plane_ransac_torch(cur_pts.transpose(0, 1),
+                                                                plane_diff_threshold=0.5,
                                                                 absolute=True)
                     params_est[m] = cur_plane[0:2] / cur_plane[2]
 
-                ## Gather the masks (predicted and true) that contribute to loss
-                target_support_pos = target[positive_ix, :]
-                mrcnn_support_pos = pred1[positive_ix, :]
+                    if (params_est[m] - target_support_pos[m]).norm() > 0.01:
+                        cur_normal_tgt = torch.cat([target_support_pos[m], torch.tensor([1.0], device=cur_pts.device)], dim=-1)
+                        inlier_mask_tgt, cur_plane_tgt = utils.fit_plane_dist_ransac_torch(cur_pts.transpose(0, 1),
+                                                                         cur_normal_tgt,
+                                                                         plane_diff_threshold=0.5,
+                                                                         absolute=True)
 
+                        ranges = self.config.getRangesFull(camera).transpose(1, 2).transpose(0, 1)
+                        XYZ = ranges * fx * self.config.BASELINE / target_disp.view(h, w)
 
+                        cur_pts_xyz = XYZ[:, torch.logical_and(final_masks[m] > 0.5,
+                                                               target_disp.view(h, w) < self.config.MAXDISP)]
+
+                        inlier_mask_xyz, cur_plane_xyz = utils.fit_plane_ransac_torch(cur_pts_xyz.transpose(0, 1),
+                                                                              plane_diff_threshold=0.01,
+                                                                              absolute=True)
+
+                        plane_offset = 1.0 / torch.clamp(cur_plane.norm(), min=1e-4)
+                        plane_normal = cur_plane * plane_offset
+                        plane_eq = torch.cat([plane_normal, -plane_offset[None]])
+
+                        plane_offset_xyz = 1.0 / torch.clamp(cur_plane_xyz.norm(), min=1e-4)
+                        plane_normal_xyz = cur_plane_xyz * plane_offset_xyz
+                        plane_eq_xyz = torch.cat([plane_normal_xyz, -plane_offset_xyz[None]])
+
+                        G_xyz_uvd = torch.tensor([[fx, 0, 0, 0],
+                                                  [0, 0, 0, 1],
+                                                  [0, -fy, 0, 0],
+                                                  [0, 0, self.config.BASELINE * fx, 0]], device=rois.device)
+
+                        plane_eq_xyz_to_uvd = G_xyz_uvd.inverse().matmul(plane_eq_xyz[:, None])[:, 0]
+                        plane_eq_xyz_to_uvd = plane_eq_xyz_to_uvd / plane_eq_xyz_to_uvd[0:3].norm()
+
+                        plane_xyz_to_uvd = plane_eq_xyz_to_uvd[0:3] / plane_eq_xyz_to_uvd[3]
+                        diff_xyz_to_uvd = torch.abs(torch.matmul(cur_pts.transpose(0, 1), cur_plane).view(-1) - torch.ones(cur_pts.transpose(0, 1).shape[0],
+                                                                                               device=cur_pts.device))
+                        diff_xyz_to_uvd = diff_xyz_to_uvd / cur_plane.norm()
+                        inlier_mask_xyz_to_uvd = diff_xyz_to_uvd < 0.5
+
+                        print('stop')
 
                 # loss_disp = F.smooth_l1_loss(mrcnn_support_pos, target_support_pos)
                 #
@@ -2666,7 +2747,7 @@ class MaskRCNN(nn.Module):
             ## padded. Equally, returned rois and targets are zero padded.
             
             rois, target_class_ids, target_deltas, target_mask, target_parameters, target_support = \
-                detection_target_layer(rpn_rois, gt_class_ids, gt_boxes, gt_masks, gt_parameters, disp_np, self.config, camera)
+                detection_target_layer(rpn_rois, gt_class_ids, gt_boxes, gt_masks, gt_parameters, gt_disp, self.config, camera)
 
             if len(rois) == 0:
                 mrcnn_class_logits = Variable(torch.FloatTensor())

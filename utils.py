@@ -718,7 +718,7 @@ def fit_plane_ransac(points):
             best_inliers_mask = inlier_mask
 
         # if enough inliers
-        if cur_inliers / points.shape[0] > 0.9:
+        if cur_inliers / points.shape[0] > 0.95:
             break
 
     best_plane = fitPlane(points[best_inliers_mask])
@@ -751,7 +751,7 @@ def fit_plane_ransac_torch(points, plane_diff_threshold=0.01, absolute=False):
             best_inliers_mask = inlier_mask
 
         # if enough inliers
-        if cur_inliers.float() / points.shape[0] > 0.9:
+        if cur_inliers.float() / points.shape[0] > 0.95:
             break
 
     if best_inliers < 3:
@@ -770,7 +770,7 @@ def fit_plane_dist_ransac_torch(points, normal, plane_diff_threshold=0.01, absol
     best_inliers = 0
     best_inliers_mask = None
     for i in range(num_iter):
-        cur_idx = torch.randint(points.shape[0])
+        cur_idx = torch.randint(points.shape[0], (1,))[0]
         cur_point = points[cur_idx]
 
         cur_d = cur_point.dot(normal)
