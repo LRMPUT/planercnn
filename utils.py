@@ -685,6 +685,26 @@ def fitPlane(points):
     return
 
 
+## Fit a 3D plane from points
+def fitPlaneSVD(points):
+    centroid = points.mean(axis=0, keepdims=True)
+    points_demean = points - centroid
+    [U, S, V] = np.linalg.svd(points_demean, full_matrices=False)
+    # for the smallest singular value
+    normal = V[2, :]
+    d = centroid[0, :].dot(normal)
+    plane_eq = np.concatenate([normal, [-d]])
+
+    return plane_eq
+
+
+def points_to_plane(points, plane):
+    points = np.concatenate([points, np.ones([points.shape[0], 1])], axis=-1)
+    diff = points @ plane
+
+    return diff
+
+
 def fit_plane_torch(points):
     if points.shape[0] == points.shape[1]:
         return torch.solve(torch.ones(points.shape[0], 1, device=points.device), points)[0]

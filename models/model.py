@@ -726,49 +726,49 @@ def detection_target_layer(proposals, gt_class_ids, gt_boxes, gt_masks, gt_param
             # only nu/nd and nv/nd
             support = roi_gt_plane_eq_uvd[:, 0:2] / roi_gt_plane_eq_uvd[:, 2:3]
 
-            final_masks = []
-            for m in range(masks.shape[0]):
-                # box = (positive_rois[m].clone() * w).long()
-                box = (roi_gt_boxes[m].clone() * w).long()
-                if (box[2] - box[0]) * (box[3] - box[1]) <= 0:
-                    continue
-
-                # mask = masks[m]
-                mask = roi_masks[m]
-                mask = mask.unsqueeze(0).unsqueeze(0)
-                mask = F.upsample(mask, size=(box[2] - box[0], box[3] - box[1]), mode='bilinear')
-                mask = mask.squeeze(0).squeeze(0)
-
-                final_mask = torch.zeros(int(w), int(w)).cuda()
-                final_mask[box[0]:box[2], box[1]:box[3]] = mask
-                final_masks.append(final_mask)
-                continue
-            final_masks = torch.stack(final_masks, dim=0)
-
-            ranges = config.getRangesFull(camera).transpose(1, 2).transpose(0, 1)
-            XYZ = ranges * fx * config.BASELINE / disp.view(int(w), int(w))
-
-            for m in range(masks.shape[0]):
-                cur_pts_xyz = XYZ[:, torch.logical_and(final_masks[m] > 0.5,
-                                                       disp.view(int(w), int(w)) < config.MAXDISP)]
-
-                inlier_mask_xyz, cur_plane_xyz = utils.fit_plane_ransac_torch(cur_pts_xyz.transpose(0, 1),
-                                                                              plane_diff_threshold=0.05,
-                                                                              absolute=True)
-                cur_parameters_xyz = cur_plane_xyz / cur_plane_xyz.norm(dim=-1, keepdim=True).square()
-                if (cur_parameters_xyz - roi_gt_parameters[m]).norm() > 0.1:
-                    cur_pts_demean = cur_pts_xyz - cur_pts_xyz.mean(dim=-1, keepdim=True)
-                    (U, D, V) = torch.svd(cur_pts_demean.transpose(0, 1)[inlier_mask_xyz])
-
-                    print('\n', (cur_parameters_xyz - roi_gt_parameters[m]).norm())
-                    print(cur_parameters_xyz)
-                    print(roi_gt_parameters[m])
-                    print(cur_plane_xyz / cur_plane_xyz.norm(dim=-1, keepdim=True))
-                    print(float(inlier_mask_xyz.sum()) / inlier_mask_xyz.shape[0])
-                    print('U = ', U)
-                    print('V = ', V)
-                    print('D = ', D)
-                    print('stop')
+            # final_masks = []
+            # for m in range(masks.shape[0]):
+            #     # box = (positive_rois[m].clone() * w).long()
+            #     box = (roi_gt_boxes[m].clone() * w).long()
+            #     if (box[2] - box[0]) * (box[3] - box[1]) <= 0:
+            #         continue
+            #
+            #     # mask = masks[m]
+            #     mask = roi_masks[m]
+            #     mask = mask.unsqueeze(0).unsqueeze(0)
+            #     mask = F.upsample(mask, size=(box[2] - box[0], box[3] - box[1]), mode='bilinear')
+            #     mask = mask.squeeze(0).squeeze(0)
+            #
+            #     final_mask = torch.zeros(int(w), int(w)).cuda()
+            #     final_mask[box[0]:box[2], box[1]:box[3]] = mask
+            #     final_masks.append(final_mask)
+            #     continue
+            # final_masks = torch.stack(final_masks, dim=0)
+            #
+            # ranges = config.getRangesFull(camera).transpose(1, 2).transpose(0, 1)
+            # XYZ = ranges * fx * config.BASELINE / disp.view(int(w), int(w))
+            #
+            # for m in range(masks.shape[0]):
+            #     cur_pts_xyz = XYZ[:, torch.logical_and(final_masks[m] > 0.5,
+            #                                            disp.view(int(w), int(w)) < config.MAXDISP)]
+            #
+            #     inlier_mask_xyz, cur_plane_xyz = utils.fit_plane_ransac_torch(cur_pts_xyz.transpose(0, 1),
+            #                                                                   plane_diff_threshold=0.05,
+            #                                                                   absolute=True)
+            #     cur_parameters_xyz = cur_plane_xyz / cur_plane_xyz.norm(dim=-1, keepdim=True).square()
+            #     if (cur_parameters_xyz - roi_gt_parameters[m]).norm() > 0.2:
+            #         cur_pts_demean = cur_pts_xyz - cur_pts_xyz.mean(dim=-1, keepdim=True)
+            #         (U, D, V) = torch.svd(cur_pts_demean.transpose(0, 1)[inlier_mask_xyz])
+            #
+            #         print('\n', (cur_parameters_xyz - roi_gt_parameters[m]).norm())
+            #         print(cur_parameters_xyz)
+            #         print(roi_gt_parameters[m])
+            #         print(cur_plane_xyz / cur_plane_xyz.norm(dim=-1, keepdim=True))
+            #         print(float(inlier_mask_xyz.sum()) / inlier_mask_xyz.shape[0])
+            #         print('U = ', U)
+            #         print('V = ', V)
+            #         print('D = ', D)
+            #         print('stop')
 
             # ranges = config.getRangesFull(camera).transpose(1, 2).transpose(0, 1)
             # ranges_rois = roi_align(ranges.view(1, 3, ranges.shape[1], ranges.shape[2]),

@@ -85,23 +85,28 @@ class ScenenetRgbdScene():
         return
 
     def transformPlanes(self, transformation, planes):
-        planeOffsets = np.linalg.norm(planes, axis=-1, keepdims=True)
+        if planes.shape[1] == 3:
+            planeOffsets = np.linalg.norm(planes, axis=-1, keepdims=True)
 
-        centers = planes
-        centers = np.concatenate([centers, np.ones((planes.shape[0], 1))], axis=-1)
-        newCenters = np.transpose(np.matmul(transformation, np.transpose(centers)))
-        newCenters = newCenters[:, :3] / newCenters[:, 3:4]
+            centers = planes
+            centers = np.concatenate([centers, np.ones((planes.shape[0], 1))], axis=-1)
+            newCenters = np.transpose(np.matmul(transformation, np.transpose(centers)))
+            newCenters = newCenters[:, :3] / newCenters[:, 3:4]
 
-        refPoints = planes - planes / np.maximum(planeOffsets, 1e-4)
-        refPoints = np.concatenate([refPoints, np.ones((planes.shape[0], 1))], axis=-1)
-        newRefPoints = np.transpose(np.matmul(transformation, np.transpose(refPoints)))
-        newRefPoints = newRefPoints[:, :3] / newRefPoints[:, 3:4]
+            refPoints = planes - planes / np.maximum(planeOffsets, 1e-4)
+            refPoints = np.concatenate([refPoints, np.ones((planes.shape[0], 1))], axis=-1)
+            newRefPoints = np.transpose(np.matmul(transformation, np.transpose(refPoints)))
+            newRefPoints = newRefPoints[:, :3] / newRefPoints[:, 3:4]
 
-        planeNormals = newRefPoints - newCenters
-        planeNormals /= np.linalg.norm(planeNormals, axis=-1, keepdims=True)
-        planeOffsets = np.sum(newCenters * planeNormals, axis=-1, keepdims=True)
-        newPlanes = planeNormals * planeOffsets
-        return newPlanes
+            planeNormals = newRefPoints - newCenters
+            planeNormals /= np.linalg.norm(planeNormals, axis=-1, keepdims=True)
+            planeOffsets = np.sum(newCenters * planeNormals, axis=-1, keepdims=True)
+            newPlanes = planeNormals * planeOffsets
+            return newPlanes
+        else:
+            planes_camera = (np.linalg.inv(transformation.transpose()) @ planes.transpose()).transpose()
+            planes_camera = planes_camera[:, 0:3] * (-planes_camera[:, 3:4])
+            return planes_camera
 
     def makeBoxySegmentation(self, segmentation):
         boxy_segm, new_id_to_old_id = comp_score_py.comp_components(segmentation, 200, 0.5)
@@ -225,6 +230,68 @@ class ScenenetRgbdScene():
             plane_mask *= (depth > 1e-4).astype(np.float32)
             plane_area = plane_mask.sum()
             depth_error = (np.abs(plane_depth - depth) * plane_mask).sum() / max(plane_area, 1)
+
+            # depth_t = torch.from_numpy(depth)
+            # camera_t = torch.from_numpy(self.camera)
+            # masks_t = torch.from_numpy(masks).permute(2, 0, 1)
+            # planes_t = torch.from_numpy(planes)
+            #
+            # self.URANGE_UNIT = ((torch.arange(self.camera[4],
+            #                                   requires_grad=False).float() + 0.5) / self.camera[4]).view(
+            #         (1, -1)).repeat(int(self.camera[5]), 1)
+            # self.VRANGE_UNIT = ((torch.arange(self.camera[5],
+            #                                   requires_grad=False).float() + 0.5) / self.camera[5]).view(
+            #         (-1, 1)).repeat(1, int(self.camera[4]))
+            # self.ONES = torch.ones(self.URANGE_UNIT.shape, requires_grad=False)
+            #
+            # urange = (self.URANGE_UNIT * self.camera[4] - self.camera[2]) / self.camera[0]
+            # vrange = (self.VRANGE_UNIT * self.camera[5] - self.camera[3]) / self.camera[1]
+            # ranges = torch.stack([urange, self.ONES, -vrange], dim=-1).permute(2, 0, 1)
+            #
+            # # ranges = self.options.getRanges(camera_t).transpose(1, 2).transpose(0, 1)
+            # XYZ = ranges * depth_t
+            #
+            # for m in range(masks_t.shape[0]):
+            #     cur_pts_xyz = XYZ[:, torch.logical_and(masks_t[m] > 0.5,
+            #                                            depth_t > 1e-4)]
+            #
+            #     inlier_mask_xyz, cur_plane_xyz = fit_plane_ransac_torch(cur_pts_xyz.transpose(0, 1),
+            #                                                                   plane_diff_threshold=0.01,
+            #                                                                   absolute=True)
+            #     cur_parameters_xyz = cur_plane_xyz / cur_plane_xyz.norm(dim=-1, keepdim=True).square()
+            #     # if (cur_parameters_xyz - planes_t[m]).norm() > 0.2:
+            #     if self.scene_id == 'scene0061_00' and frame_num == '007325' and cam_idx == 1:
+            #         cur_pts_demean = cur_pts_xyz - cur_pts_xyz.mean(dim=-1, keepdim=True)
+            #         (U, D, V) = torch.svd(cur_pts_demean.transpose(0, 1)[inlier_mask_xyz])
+            #
+            #         planes_global_off = np.linalg.norm(planes_global, axis=-1, keepdims=True)
+            #         # planes_global_norm = planes_global / planes_global_off
+            #         # planes_global_eq = np.concatenate([planes_global_norm, -planes_global_off], axis=-1)
+            #         # planes_local_eq = (np.linalg.inv(extrinsics.transpose()) @ planes_global_eq.transpose()).transpose()
+            #         # planes_local_eq = planes_local_eq[:, 0:3] * planes_local_eq[:, 3:4]
+            #
+            #         np.set_printoptions(suppress=True)
+            #         torch.set_printoptions(sci_mode=False)
+            #         print('\n', (cur_parameters_xyz - planes_t[m]).norm())
+            #         print(cur_parameters_xyz)
+            #         print(planes_t[m])
+            #         print(planes_global[m])
+            #         print(extrinsics)
+            #         # print(planes_local_eq[m])
+            #         # print(planes_global_eq[m])
+            #         print(cur_plane_xyz / cur_plane_xyz.norm(dim=-1, keepdim=True))
+            #         print(float(inlier_mask_xyz.sum()) / inlier_mask_xyz.shape[0])
+            #         print(inlier_mask_xyz.sum())
+            #         print('U = ', U)
+            #         print('V = ', V)
+            #         print('D = ', D)
+            #
+            #         if self.writer is not None:
+            #             self.writer.add_image('scene/image', image, dataformats='HWC')
+            #             self.writer.add_image('scene/plane_mask', masks[:, :, m], dataformats='HW')
+            #             self.writer.flush()
+            #
+            #         print('stop')
 
             # for b in range(masks.shape[-1]):
             #     mask_image = np.tile(np.expand_dims(masks[:, :, b].astype(np.uint8), axis=-1), [1, 1, 3]) * np.array([0, 0, 255], dtype=np.uint8)

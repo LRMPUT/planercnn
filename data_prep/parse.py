@@ -126,7 +126,8 @@ def mergePlanes(points, planes, planePointIndices, planeSegments, segmentNeighbo
         if planeNorm == 0:
             planeFittingErrors.append(fittingErrorThreshold * 2)
             continue
-        diff = np.abs(np.matmul(XYZ, plane) - np.ones(XYZ.shape[0])) / planeNorm
+        # diff = np.abs(np.matmul(XYZ, plane) - np.ones(XYZ.shape[0])) / planeNorm
+        diff = points_to_plane(XYZ, plane)
         planeFittingErrors.append(diff.mean())
         continue
     
@@ -164,17 +165,19 @@ def mergePlanes(points, planes, planePointIndices, planeSegments, segmentNeighbo
                 neighborPlaneNorm = np.linalg.norm(neighborPlane[0])
                 if neighborPlaneNorm < 1e-4:
                     continue
-                dotProduct = np.abs(np.dot(neighborPlane[0], plane) / np.maximum(neighborPlaneNorm * np.linalg.norm(plane), 1e-4))
+                # dotProduct = np.abs(np.dot(neighborPlane[0], plane) / np.maximum(neighborPlaneNorm * np.linalg.norm(plane), 1e-4))
+                dotProduct = np.dot(neighborPlane[0][0:3], plane[0:3])
                 if dotProduct < orthogonalThreshold:
                     continue                                
                 newPointIndices = np.concatenate([neighborPlane[1], pointIndices], axis=0)
                 XYZ = points[newPointIndices]
                 if dotProduct > parallelThreshold and len(neighborPlane[1]) > len(pointIndices) * 0.5:
-                    newPlane = fitPlane(XYZ)                    
+                    newPlane = fitPlaneSVD(XYZ)
                 else:
                     newPlane = plane
                     pass
-                diff = np.abs(np.matmul(XYZ, newPlane) - np.ones(XYZ.shape[0])) / np.linalg.norm(newPlane)
+                # diff = np.abs(np.matmul(XYZ, newPlane) - np.ones(XYZ.shape[0])) / np.linalg.norm(newPlane)
+                diff = points_to_plane(XYZ, newPlane)
                 newFittingError = diff.mean()
                 if debug:
                     print(len(planeList), planeIndex, neighborPlaneIndex, newFittingError, plane / np.linalg.norm(plane), neighborPlane[0] / np.linalg.norm(neighborPlane[0]), dotProduct, orthogonalThreshold)
@@ -221,7 +224,7 @@ def mergePlanes(points, planes, planePointIndices, planeSegments, segmentNeighbo
             # planeList = planeList[:maxNumPlanes]
             pass
         else:
-            # planeList = planeList[:maxNumPlanes] + [(np.zeros(3), planeInfo[1], planeInfo[2], fittingErrorThreshold) for planeInfo in planeList[maxNumPlanes:]]
+            # planeList = planeList[:maxNumPlanes] + [(np.zeros(4), planeInfo[1], planeInfo[2], fittingErrorThreshold) for planeInfo in planeList[maxNumPlanes:]]
             pass
 
     groupedPlanes, groupedPlanePointIndices, groupedPlaneSegments, groupedPlaneFittingErrors = zip(*planeList)
@@ -665,7 +668,7 @@ def processMesh(scene_id):
                 for segmentIndex in group:
                     pointIndices.update(segmentToVertIdxs[segmentIndex])
                 pointIndices = list(pointIndices)
-                groupPlanes = [[np.zeros(3), pointIndices, []]]
+                groupPlanes = [[np.zeros(4), pointIndices, []]]
                 planeGroups.append(groupPlanes)
             continue
 
@@ -686,7 +689,7 @@ def processMesh(scene_id):
             for c in range(2):
                 if c == 0:
                     ## First try to fit one plane
-                    # plane = fitPlane(XYZ)
+                    # plane = fitPlaneSVD(XYZ)
                     # diff = np.abs(np.matmul(XYZ, plane) - np.ones(XYZ.shape[0])) / np.linalg.norm(plane)
                     # if diff.mean() < fittingErrorThreshold:
                     #     groupPlanes.append(plane)
@@ -706,11 +709,13 @@ def processMesh(scene_id):
                         for iteration in range(min(XYZ.shape[0], numIterations)):
                             sampledPoints = XYZ[np.random.choice(np.arange(XYZ.shape[0]), size=(3), replace=False)]
                             try:
-                                plane = fitPlane(sampledPoints)
+                                # plane = fitPlane(sampledPoints)
+                                plane = fitPlaneSVD(sampledPoints)
                                 pass
                             except:
                                 continue
-                            diff = np.abs(np.matmul(XYZ, plane) - np.ones(XYZ.shape[0])) / np.linalg.norm(plane)
+                            # diff = np.abs(np.matmul(XYZ, plane) - np.ones(XYZ.shape[0])) / np.linalg.norm(plane)
+                            diff = points_to_plane(XYZ, plane)
                             # diffNorm = np.abs(np.dot(normals, plane)/np.linalg.norm(plane))
                             # inlierMask = (diff < planeDiffThreshold) & (diffNorm > np.cos(np.deg2rad(30)))
                             inlierMask = diff < planeDiffThreshold
@@ -725,7 +730,7 @@ def processMesh(scene_id):
                             break
                         
                         pointIndices = segmentIndices[bestPlaneInfo[2]]
-                        bestPlane = fitPlane(XYZ[bestPlaneInfo[2]])
+                        bestPlane = fitPlaneSVD(XYZ[bestPlaneInfo[2]])
 
                         curPoints = XYZ[bestPlaneInfo[2]]
                         curPointsDemean = curPoints - np.mean(curPoints, axis=0)
@@ -733,8 +738,7 @@ def processMesh(scene_id):
                         eigvals, eigvecs = np.linalg.eigh(covar)
                         curv = eigvals[0] / np.sum(eigvals)
 
-                        meanDot = np.mean(np.abs(
-                            np.dot(normals[bestPlaneInfo[2]], bestPlane) / np.linalg.norm(bestPlane)))
+                        meanDot = np.mean(np.abs(np.dot(normals[bestPlaneInfo[2]], bestPlane[0:3])))
 
                         if curv < 0.005 and meanDot > np.cos(np.deg2rad(30)):
                             segmentPlanes.append(bestPlane)
@@ -748,7 +752,7 @@ def processMesh(scene_id):
 
                     if sum([len(indices) for indices in segmentPlanePointIndices]) < numPoints * 0.5:
                         if not debug:
-                            groupPlanes.append(np.zeros(3))
+                            groupPlanes.append(np.zeros(4))
                             groupPlanePointIndices.append(allSegmentIndices)
                             groupPlaneSegments.append(set([segmentIndex]))
                             pass
@@ -756,7 +760,7 @@ def processMesh(scene_id):
                         if not debug:
                             if len(segmentIndices) > 0:
                                 ## Add remaining non-planar regions
-                                segmentPlanes.append(np.zeros(3))
+                                segmentPlanes.append(np.zeros(4))
                                 segmentPlanePointIndices.append(segmentIndices)
                                 pass
                         groupPlanes += segmentPlanes
@@ -781,7 +785,7 @@ def processMesh(scene_id):
                 continue
             maxArea, planeIndex = maxArea
             if planeIndex >= 0:
-                groupPlanes[planeIndex] = fitPlane(allXYZ[groupPlanePointIndices[planeIndex]])
+                groupPlanes[planeIndex] = fitPlaneSVD(allXYZ[groupPlanePointIndices[planeIndex]])
                 numRealPlanes = 1
                 pass
             pass
@@ -790,8 +794,9 @@ def processMesh(scene_id):
             
             pointIndices = np.concatenate([indices for plane, indices in zip(groupPlanes, groupPlanePointIndices)], axis=0)
             XYZ = allXYZ[pointIndices]
-            plane = fitPlane(XYZ)
-            diff = np.abs(np.matmul(XYZ, plane) - np.ones(XYZ.shape[0])) / np.linalg.norm(plane)
+            plane = fitPlaneSVD(XYZ)
+            # diff = np.abs(np.matmul(XYZ, plane) - np.ones(XYZ.shape[0])) / np.linalg.norm(plane)
+            diff = points_to_plane(XYZ, plane)
 
             if groupLabel == 'floor':
                 # Relax the constraint for the floor due to the misalignment issue in ScanNet
@@ -843,7 +848,8 @@ def processMesh(scene_id):
                     neighborPlane = groupPlanes[neighborPlaneIndex]
                     if np.linalg.norm(plane) * np.linalg.norm(neighborPlane) < 1e-4:
                         continue
-                    dotProduct = np.abs(np.dot(plane, neighborPlane) / np.maximum(np.linalg.norm(plane) * np.linalg.norm(neighborPlane), 1e-4))
+                    # dotProduct = np.abs(np.dot(plane, neighborPlane) / np.maximum(np.linalg.norm(plane) * np.linalg.norm(neighborPlane), 1e-4))
+                    dotProduct = np.dot(plane[0:3], neighborPlane[0:3])
                     if dotProduct < orthogonalThreshold:
                         neighborPlaneIndices.append(neighborPlaneIndex)
                         pass
@@ -992,8 +998,8 @@ def processMesh(scene_id):
 
     planes = np.array(planes)
     print('number of planes: ', planes.shape[0])
-    planesD = 1.0 / np.maximum(np.linalg.norm(planes, axis=-1, keepdims=True), 1e-4)
-    planes *= pow(planesD, 2)
+    # planesD = 1.0 / np.maximum(np.linalg.norm(planes, axis=-1, keepdims=True), 1e-4)
+    # planes *= pow(planesD, 2)
 
     # remove faces that lay on the same plane
     planeFaceIdxs = [[] for _ in range(len(planePointIndices))]
@@ -1045,8 +1051,8 @@ def processMesh(scene_id):
         engine = None
         if len(curPlaneFaces) > 0:
             mesh = pymesh.form_mesh(points[planePoints], np.array(curPlaneFaces))
-            engine = pymesh.BVH()
-            engine.load_mesh(mesh)
+            # engine = pymesh.BVH()
+            # engine.load_mesh(mesh)
 
         if debug and len(planePoints) > 10000:
             print('plane %d, %d vertices, %d faces, ' % (planeIndex, len(planePoints), len(curPlaneFaces)), planes[planeIndex])
@@ -1128,18 +1134,27 @@ def processMesh(scene_id):
             planes_norm = np.linalg.norm(plane1) * np.linalg.norm(plane2)
             if planes_norm < 1e-4:
                 continue
-            planes_dot = abs(np.dot(plane1, plane2)) / planes_norm
+            planes_dot = abs(np.dot(plane1[0:3], plane2[0:3]))
+            planes_dist = np.linalg.norm(plane1[0:3]*(-plane1[3:4]) - plane2[0:3]*(-plane2[3:4]))
 
             # if planeIndex == 20 and planeIndex2 == 121:
             #     print('Planes %d and %d, planes_dot = %f' % (planeIndex, planeIndex2, planes_dot))
             #     print(len(planePoints2), len(planePoints), np.cos(np.deg2rad(5)))
 
             # if second plane is bigger and only if parallel
-            if planeIndex != planeIndex2 and len(planePoints2) >= len(planePoints) and planes_dot > np.cos(np.deg2rad(5)):
+            if planeIndex != planeIndex2 and \
+                len(planePoints2) >= len(planePoints) and \
+                planes_dot > np.cos(np.deg2rad(5)) and \
+                planes_dist < 0.05:
+
                 # diff = np.abs(np.matmul(XYZ, plane2) - np.ones(XYZ.shape[0])) / np.linalg.norm(plane2)
                 # pointIndices = (diff < 0.005).nonzero()[0]
 
                 if planeMeshes[planeIndex2]:
+                    if planeEngines[planeIndex2] is None:
+                        planeEngines[planeIndex2] = pymesh.BVH()
+                        planeEngines[planeIndex2].load_mesh(planeMeshes[planeIndex2])
+
                     start_dist = time.perf_counter()
                     sq_dists, face_idxs, closest_points = pymesh.distance_to_mesh(planeMeshes[planeIndex2],
                                                                                   XYZ,
@@ -1477,7 +1492,7 @@ def main():
 
     scene_ids = fnmatch.filter(os.listdir(ROOT_FOLDER), 'scene0[01]??_00')
     scene_ids = sorted(scene_ids)
-    # scene_ids = ['scene0021_00']
+    # scene_ids = ['scene0061_00']
     print(scene_ids)
 
     np.random.seed(13)
@@ -1506,37 +1521,37 @@ def main():
             # download_release([scene_id], ROOT_FOLDER, FILETYPES, use_v1_sens=True)
             # pass
 
-        if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/annotation/planes.ply'):
-            print('plane fitting ', scene_id)
-            processMesh(scene_id)
-            pass
+        # if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/annotation/planes.ply'):
+        print('plane fitting ', scene_id)
+        processMesh(scene_id)
+        pass
 
-        if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation_left/*.png')) < len(
-                glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_left/*.txt')):
-            print('rendering left ', scene_id)
-            cmd = './data_prep/Renderer/build/Renderer --cam_name=left --frame_stride=25 --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
-            os.system(cmd)
-            pass
+        # if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation_left/*.png')) < len(
+        #         glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_left/*.txt')):
+        print('rendering left ', scene_id)
+        cmd = './data_prep/Renderer/build/Renderer --cam_name=left --frame_stride=25 --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
+        os.system(cmd)
+        pass
 
-        if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation_right/*.png')) < len(
-                glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_right/*.txt')):
-            print('rendering right ', scene_id)
-            cmd = './data_prep/Renderer/build/Renderer --cam_name=right --frame_stride=25 --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
-            os.system(cmd)
-            pass
+        # if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation_right/*.png')) < len(
+        #         glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_right/*.txt')):
+        print('rendering right ', scene_id)
+        cmd = './data_prep/Renderer/build/Renderer --cam_name=right --frame_stride=25 --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
+        os.system(cmd)
+        pass
 
-        if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/depth_left/*.png')) <\
-                len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_left/*.txt')):
-            print('computing depth and normals')
-            compute_depth_and_normals(scene_id)
+        # if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/depth_left/*.png')) <\
+        #         len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_left/*.txt')):
+        #     print('computing depth and normals')
+        #     compute_depth_and_normals(scene_id)
 
         # print('removing invalid frames')
         # remove_invalid(scene_id)
 
         continue
 
-    print('selecting splits')
-    select_splits(scene_ids)
+    # print('selecting splits')
+    # select_splits(scene_ids)
 
 
 if __name__=='__main__':

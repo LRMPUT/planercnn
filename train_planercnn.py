@@ -50,8 +50,8 @@ def train(options):
         shutil.rmtree(summary_dir)
     writer = SummaryWriter(summary_dir)
 
-    # dataset = ScenenetRgbdDataset(options, config, split='train', random=False, writer=writer)
-    dataset = ScenenetRgbdDataset(options, config, split='train', random=False)
+    dataset = ScenenetRgbdDataset(options, config, split='train', random=False, writer=writer)
+    # dataset = ScenenetRgbdDataset(options, config, split='train', random=False)
     # dataset_test = ScenenetRgbdDataset(options, config, split='test', random=False, writer=writer)
     # dataset = PlaneDataset(options, config, split='train', random=False)
     # dataset_test = PlaneDataset(options, config, split='test', random=False)
