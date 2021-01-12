@@ -416,9 +416,10 @@ def unmold_image(normalized_images, config):
     return ((normalized_images * config.STD_PIXEL + config.MEAN_PIXEL) * 255.0).astype(np.uint8)
 
 
-# def unmold_image_torch(normalized_images, config):
-#     """Takes a image normalized with mold() and returns the original."""
-#     return normalized_images + torch.tensor(config.MEAN_PIXEL, requires_grad=False).unsqueeze(dim=1).unsqueeze(dim=2).cuda()
+def unmold_image_torch(normalized_images, config):
+    """Takes a image normalized with mold() and returns the original."""
+    return ((normalized_images * config.STD_PIXEL_TENSOR[None, :, None, None] + \
+             config.MEAN_PIXEL_TENSOR[None, :, None, None]) * 255.0)
 
 
 ## Visualization

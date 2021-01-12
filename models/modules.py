@@ -246,22 +246,23 @@ def unmoldDetections(config, camera, detections, detection_masks, detection_supp
                                   [0, 0, 0, 1],
                                   [0, -fy, 0, 0],
                                   [0, 0, config.BASELINE * fx, 0]], device=rois.device)
-        for m in rois.shape[0]:
+        for m in range(rois.shape[0]):
             cur_pts = pts_uvd[:, masks[m] > 0.5]
-            cur_normal = torch.cat([detection_support[m], 1.0], dim=-1)
+            cur_normal = torch.cat([detection_support[m], torch.tensor([1.0], dtype=torch.float, device=rois.device)],
+                                   dim=-1)
             _, cur_plane = utils.fit_plane_dist_ransac_torch(cur_pts.transpose(0, 1),
                                                              cur_normal,
-                                                             plane_diff_threshold=2,
+                                                             plane_diff_threshold=0.5,
                                                              absolute=True)
             plane_offset = 1.0 / torch.clamp(cur_plane.norm(), min=1e-4)
             plane_normal = cur_plane / plane_offset
-            plane_eq = torch.cat([plane_normal, -plane_offset])
+            plane_eq = torch.cat([plane_normal, -plane_offset[None]])
 
             plane_eq_xyz = G_xyz_uvd.matmul(plane_eq.view(4, 1))
 
             plane_parameters = plane_eq_xyz[0:3, 0] * (-plane_eq_xyz[3, 0])
 
-            detections = torch.cat([detections[:, :6], plane_parameters], dim=-1)
+            detections[m, 6:9] = plane_parameters
 
     return detections, masks
 

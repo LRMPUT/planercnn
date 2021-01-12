@@ -33,8 +33,8 @@ from config import PlaneConfig
 
 def train(options):
     cv2.setNumThreads(0)
-    torch.manual_seed(13)
-    np.random.seed(13)
+    # torch.manual_seed(13)
+    # np.random.seed(13)
 
     if not os.path.exists(options.checkpoint_dir):
         os.system("mkdir -p %s"%options.checkpoint_dir)
@@ -50,16 +50,16 @@ def train(options):
         shutil.rmtree(summary_dir)
     writer = SummaryWriter(summary_dir)
 
-    dataset = ScenenetRgbdDataset(options, config, split='train', random=False, writer=writer)
-    # dataset = ScenenetRgbdDataset(options, config, split='train', random=False)
+    # dataset = ScenenetRgbdDataset(options, config, split='train', random=False, writer=writer)
+    dataset = ScenenetRgbdDataset(options, config, split='train', random=False)
     # dataset_test = ScenenetRgbdDataset(options, config, split='test', random=False, writer=writer)
     # dataset = PlaneDataset(options, config, split='train', random=False)
     # dataset_test = PlaneDataset(options, config, split='test', random=False)
 
     print('the number of images', len(dataset))
 
-    # dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
+    # dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
     # dataloader_test = DataLoader(dataset_test, batch_size=1, shuffle=True)
 
     model = MaskRCNN(config)
