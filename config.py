@@ -105,6 +105,8 @@ class Config(object):
     # STD_PIXEL = np.array([0.229, 0.224, 0.225])
     STD_PIXEL_TENSOR = torch.from_numpy(STD_PIXEL.astype(np.float32))
 
+    SCALE_PIXEL = 1.0
+
     # Number of ROIs per image to feed to classifier/mask heads
     # The Mask RCNN paper uses 512 but often the RPN doesn't generate
     # enough positive proposals to fill this and keep a positive:negative

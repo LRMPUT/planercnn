@@ -192,7 +192,9 @@ def train(options):
                     target_support, mrcnn_support)
 
             losses += [rpn_class_loss + rpn_bbox_loss + \
-                       mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_support_loss]
+                        mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss]
+            # losses += [rpn_class_loss + rpn_bbox_loss + \
+            #            mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_support_loss]
             # losses += [rpn_class_loss + rpn_bbox_loss + \
             #            mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_support_loss + mrcnn_support_class_loss]
             # losses += [rpn_class_loss + rpn_bbox_loss +
