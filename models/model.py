@@ -1465,8 +1465,8 @@ class PlaneParams(nn.Module):
 
         pred1 = x
         # from pooled pixels to image pixels
-        pred1[:, 0] = pred1[:, 0] * self.pool_size / ((rois[0, :, 3] - rois[0, :, 1]) * self.image_shape[1])
-        pred1[:, 1] = pred1[:, 1] * self.pool_size / ((rois[0, :, 2] - rois[0, :, 0]) * self.image_shape[0])
+        # pred1[:, 0] = pred1[:, 0] * self.pool_size / ((rois[0, :, 3] - rois[0, :, 1]) * self.image_shape[1])
+        # pred1[:, 1] = pred1[:, 1] * self.pool_size / ((rois[0, :, 2] - rois[0, :, 0]) * self.image_shape[0])
 
         # if writer is not None and \
         #    target is not None and \
@@ -1522,7 +1522,8 @@ class PlaneParams(nn.Module):
         #                                                         absolute=True)
         #             params_est[m] = cur_plane[0:2] / cur_plane[2]
         #
-        #             if (params_est[m] - target_support_pos[m]).norm() > 0.01:
+        #             # if (params_est[m] - target_support_pos[m]).norm() > 0.01:
+        #             if (params_est[m] - mrcnn_support_pos[m]).norm() > 0.05:
         #                 cur_normal_tgt = torch.cat([target_support_pos[m], torch.tensor([1.0], device=cur_pts.device)], dim=-1)
         #                 inlier_mask_tgt, cur_plane_tgt = utils.fit_plane_dist_ransac_torch(cur_pts.transpose(0, 1),
         #                                                                  cur_normal_tgt,
@@ -1572,6 +1573,7 @@ class PlaneParams(nn.Module):
         #                 print('\nm = ', m)
         #                 print(params_est[m])
         #                 print(target_support_pos[m])
+        #                 print(mrcnn_support_pos[m])
         #                 print('inlier_mask.sum() = ', inlier_mask.sum())
         #                 print('inlier_mask_tgt.sum() = ', inlier_mask_tgt.sum())
         #                 print('stop')
