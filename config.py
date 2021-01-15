@@ -126,6 +126,7 @@ class Config(object):
     MASK_POOL_SIZE = 14
     MASK_SHAPE = [28, 28]
     SUPPORT_SHAPE = [2, 2]
+    MASK_THRESH = 0.5
     FINAL_MASK_SHAPE = [224, 224]  # (height, width) of the mini-mask
     # Maximum number of ground truth instances to use in one image
     MAX_GT_INSTANCES = 100

@@ -85,23 +85,28 @@ class ScenenetRgbdScene():
         return
 
     def transformPlanes(self, transformation, planes):
-        planeOffsets = np.linalg.norm(planes, axis=-1, keepdims=True)
+        if planes.shape[1] == 3:
+            planeOffsets = np.linalg.norm(planes, axis=-1, keepdims=True)
 
-        centers = planes
-        centers = np.concatenate([centers, np.ones((planes.shape[0], 1))], axis=-1)
-        newCenters = np.transpose(np.matmul(transformation, np.transpose(centers)))
-        newCenters = newCenters[:, :3] / newCenters[:, 3:4]
+            centers = planes
+            centers = np.concatenate([centers, np.ones((planes.shape[0], 1))], axis=-1)
+            newCenters = np.transpose(np.matmul(transformation, np.transpose(centers)))
+            newCenters = newCenters[:, :3] / newCenters[:, 3:4]
 
-        refPoints = planes - planes / np.maximum(planeOffsets, 1e-4)
-        refPoints = np.concatenate([refPoints, np.ones((planes.shape[0], 1))], axis=-1)
-        newRefPoints = np.transpose(np.matmul(transformation, np.transpose(refPoints)))
-        newRefPoints = newRefPoints[:, :3] / newRefPoints[:, 3:4]
+            refPoints = planes - planes / np.maximum(planeOffsets, 1e-4)
+            refPoints = np.concatenate([refPoints, np.ones((planes.shape[0], 1))], axis=-1)
+            newRefPoints = np.transpose(np.matmul(transformation, np.transpose(refPoints)))
+            newRefPoints = newRefPoints[:, :3] / newRefPoints[:, 3:4]
 
-        planeNormals = newRefPoints - newCenters
-        planeNormals /= np.linalg.norm(planeNormals, axis=-1, keepdims=True)
-        planeOffsets = np.sum(newCenters * planeNormals, axis=-1, keepdims=True)
-        newPlanes = planeNormals * planeOffsets
-        return newPlanes
+            planeNormals = newRefPoints - newCenters
+            planeNormals /= np.linalg.norm(planeNormals, axis=-1, keepdims=True)
+            planeOffsets = np.sum(newCenters * planeNormals, axis=-1, keepdims=True)
+            newPlanes = planeNormals * planeOffsets
+            return newPlanes
+        else:
+            planes_camera = (np.linalg.inv(transformation.transpose()) @ planes.transpose()).transpose()
+            planes_camera = planes_camera[:, 0:3] * (-planes_camera[:, 3:4])
+            return planes_camera
 
     def makeBoxySegmentation(self, segmentation):
         boxy_segm, new_id_to_old_id = comp_score_py.comp_components(segmentation, 200, 0.5)

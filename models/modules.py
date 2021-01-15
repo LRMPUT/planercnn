@@ -62,7 +62,7 @@ def get_support_ranges(camera, rois):
     return support_ranges
 
 
-def apply_support(config, camera, rois, support):
+def apply_support(config, camera, rois, support, roi_masks):
     fx = camera[0]
     fy = camera[1]
     cx = camera[2]
@@ -85,18 +85,30 @@ def apply_support(config, camera, rois, support):
     #                          [1.0, 1.0]],
     #                         [[-(0.0 - cy) / fy, -(0.0 - cy) / fy],
     #                          [-(h - cy) / fy, -(h - cy) / fy]]]], dtype=torch.float, device=rois.device)
+
+    # probability of being planar
+    roi_masks = 1.0 - roi_masks[:, 0, :, :]
+    roi_masks = torch.nn.functional.interpolate(roi_masks.unsqueeze(1), (2, 2), mode='area').squeeze(1)
+    roi_masks = roi_masks.view(-1, support.shape[1])
+    # compute loss for support points within the mask
+    mask = roi_masks > config.MASK_THRESH
+    mask = mask
+    worst_pt = torch.argmin(roi_masks, dim=1)
+    mask[torch.arange(mask.shape[0]), worst_pt] = False
+
     # depth from disparity
     support_depth = fx * config.BASELINE / torch.clamp(support, min=1.0)
     support_pts = support_depth[:, None, :] * ranges_rois
     planes = torch.zeros(rois.shape[0], 3, device=rois.device)
     for r in range(rois.shape[0]):
-        # (x, y, z) goes to the last dimension
-        cur_pts = support_pts[r].transpose(0, 1)
-        try:
-            cur_plane = utils.fit_plane_torch(cur_pts)
-            planes[r] = cur_plane
-        except:
-            continue
+        if mask[r].sum() == 3:
+            # (x, y, z) goes to the last dimension
+            cur_pts = support_pts[r, :, mask[r]].transpose(0, 1)
+            try:
+                cur_plane = utils.fit_plane_torch(cur_pts)
+                planes[r] = cur_plane
+            except:
+                continue
     return planes
 
 
@@ -220,7 +232,7 @@ def unmoldDetections(config, camera, detections, detection_masks, detection_supp
         rois[:, [0, 2]] /= depth_np.shape[1]
         # x
         rois[:, [1, 3]] /= depth_np.shape[2]
-        plane_parameters = apply_support(config, camera, rois, detection_support)
+        plane_parameters = apply_support(config, camera, rois, detection_support, detection_masks)
         plane_parameters = plane_parameters / torch.clamp(torch.norm(plane_parameters,
                                                                      dim=-1,
                                                                      keepdim=True).square(), 1e-4)

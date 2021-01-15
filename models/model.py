@@ -1339,12 +1339,12 @@ class PlaneParams(nn.Module):
                                padding=(1, 1, 1),
                                padding_mode='replicate')
 
-        self.conv3 = nn.Conv3d(16,
-                               16,
-                               kernel_size=3,
-                               stride=(1, 1, 1),
-                               padding=(1, 1, 1),
-                               padding_mode='replicate')
+        # self.conv3 = nn.Conv3d(16,
+        #                        16,
+        #                        kernel_size=3,
+        #                        stride=(1, 1, 1),
+        #                        padding=(1, 1, 1),
+        #                        padding_mode='replicate')
 
         self.conv4 = nn.Conv3d(16,
                                16,
@@ -1353,12 +1353,12 @@ class PlaneParams(nn.Module):
                                padding=(1, 1, 1),
                                padding_mode='replicate')
 
-        self.conv5 = nn.Conv3d(16,
-                               16,
-                               kernel_size=3,
-                               stride=(1, 1, 1),
-                               padding=(1, 1, 1),
-                               padding_mode='replicate')
+        # self.conv5 = nn.Conv3d(16,
+        #                        16,
+        #                        kernel_size=3,
+        #                        stride=(1, 1, 1),
+        #                        padding=(1, 1, 1),
+        #                        padding_mode='replicate')
 
         self.conv6 = nn.Conv3d(16,
                                1,
@@ -1385,12 +1385,12 @@ class PlaneParams(nn.Module):
 
         x = self.conv2(roi_feat)
         x = self.relu(x)
-        x = self.conv3(x)
-        x = self.relu(x)
+        # x = self.conv3(x)
+        # x = self.relu(x)
         x = self.conv4(x)
         x = self.relu(x)
-        x = self.conv5(x)
-        x = self.relu(x)
+        # x = self.conv5(x)
+        # x = self.relu(x)
         x = self.conv6(x)
         x = x.view(-1, self.config.MAXDISP // 4, 2, 2)
 
@@ -1963,7 +1963,7 @@ def compute_mrcnn_parameter_loss(target_parameters, target_class_ids, pred_param
     return loss
 
 
-def compute_mrcnn_support_loss(target_support, mrcnn_support, target_class_ids):
+def compute_mrcnn_support_loss(target_support, mrcnn_support, target_class_ids, target_mask, mask_thresh=0.5):
     if (target_class_ids > 0).sum() > 0:
         ## Only positive ROIs contribute to the loss. And only
         ## the class specific mask of each ROI.
@@ -1974,9 +1974,17 @@ def compute_mrcnn_support_loss(target_support, mrcnn_support, target_class_ids):
         ## Gather the masks (predicted and true) that contribute to loss
         target_support_pos = target_support[positive_ix, :]
         mrcnn_support_pos = mrcnn_support[positive_ix, :]
+        target_mask_pos = torch.where(target_mask[positive_ix, :, :] != 0,
+                                      torch.tensor(1.0, dtype=torch.float, device=target_mask.device),
+                                      torch.tensor(0.0, dtype=torch.float, device=target_mask.device))
+        target_mask_pos = torch.nn.functional.interpolate(target_mask_pos.unsqueeze(1), (2, 2), mode='area').squeeze(1)
+        # compute loss for support points within the mask
+        mask = target_mask_pos.view(-1, 4) > mask_thresh
 
+        mrcnn_support_pos_mask = mrcnn_support_pos[mask]
+        target_support_pos_mask = target_support_pos[mask]
 
-        loss_disp = F.smooth_l1_loss(mrcnn_support_pos, target_support_pos)
+        loss_disp = F.smooth_l1_loss(mrcnn_support_pos_mask, target_support_pos_mask)
         # if loss > 1 or torch.isnan(loss).any():
         #     print('\nsupport loss: ', loss.float())
         #     print('num rois: ', target_support_pos.shape[0])
@@ -1996,7 +2004,8 @@ def compute_losses(config, rpn_match, rpn_bbox, rpn_class_logits, rpn_pred_bbox,
     mrcnn_bbox_loss = compute_mrcnn_bbox_loss(target_deltas, target_class_ids, mrcnn_bbox)
     mrcnn_mask_loss = compute_mrcnn_mask_loss(config, target_mask, target_class_ids, target_parameters, mrcnn_mask)
     mrcnn_parameter_loss = 50*compute_mrcnn_parameter_loss(target_parameters, target_class_ids, mrcnn_parameters)
-    mrcnn_support_loss = compute_mrcnn_support_loss(target_support, mrcnn_support, target_class_ids)
+    mrcnn_support_loss = compute_mrcnn_support_loss(target_support, mrcnn_support, target_class_ids, target_mask,
+                                                    config.MASK_THRESH)
     return [rpn_class_loss, rpn_bbox_loss, mrcnn_class_loss, mrcnn_bbox_loss, mrcnn_mask_loss, mrcnn_parameter_loss,
             mrcnn_support_loss]
 
