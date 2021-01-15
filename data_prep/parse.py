@@ -1490,7 +1490,7 @@ def main():
     soft, hard = resource.getrlimit(resource.RLIMIT_AS)
     resource.setrlimit(resource.RLIMIT_AS, (48 * 1024 * 1024 * 1024, hard))
 
-    scene_ids = fnmatch.filter(os.listdir(ROOT_FOLDER), 'scene0[01]??_00')
+    scene_ids = fnmatch.filter(os.listdir(ROOT_FOLDER), 'scene0[23]??_00')
     scene_ids = sorted(scene_ids)
     # scene_ids = ['scene0061_00']
     print(scene_ids)
@@ -1521,32 +1521,32 @@ def main():
             # download_release([scene_id], ROOT_FOLDER, FILETYPES, use_v1_sens=True)
             # pass
 
-        # if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/annotation/planes.ply'):
-        print('plane fitting ', scene_id)
-        processMesh(scene_id)
+        if not os.path.exists(ROOT_FOLDER + '/' + scene_id + '/annotation/planes.ply'):
+            print('plane fitting ', scene_id)
+            processMesh(scene_id)
         pass
 
-        # if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation_left/*.png')) < len(
-        #         glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_left/*.txt')):
-        print('rendering left ', scene_id)
-        cmd = './data_prep/Renderer/build/Renderer --cam_name=left --frame_stride=25 --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
-        os.system(cmd)
+        if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation_left/*.png')) < len(
+                glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_left/*.txt')):
+            print('rendering left ', scene_id)
+            cmd = './data_prep/Renderer/build/Renderer --cam_name=left --frame_stride=25 --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
+            os.system(cmd)
         pass
 
-        # if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation_right/*.png')) < len(
-        #         glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_right/*.txt')):
-        print('rendering right ', scene_id)
-        cmd = './data_prep/Renderer/build/Renderer --cam_name=right --frame_stride=25 --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
-        os.system(cmd)
+        if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/annotation/segmentation_right/*.png')) < len(
+                glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_right/*.txt')):
+            print('rendering right ', scene_id)
+            cmd = './data_prep/Renderer/build/Renderer --cam_name=right --frame_stride=25 --scene_id=' + scene_id + ' --root_folder=' + ROOT_FOLDER
+            os.system(cmd)
         pass
 
-        # if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/depth_left/*.png')) <\
-        #         len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_left/*.txt')):
-        #     print('computing depth and normals')
-        #     compute_depth_and_normals(scene_id)
+        if len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/depth_left/*.png')) <\
+                len(glob.glob(ROOT_FOLDER + '/' + scene_id + '/frames/pose_left/*.txt')):
+            print('computing depth and normals')
+            compute_depth_and_normals(scene_id)
 
-        # print('removing invalid frames')
-        # remove_invalid(scene_id)
+        print('removing invalid frames')
+        remove_invalid(scene_id)
 
         continue
 

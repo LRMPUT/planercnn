@@ -1393,32 +1393,32 @@ class PlaneParams(nn.Module):
         #                        padding_mode='replicate')
 
         self.conv2 = nn.Conv3d(32,
-                               16,
+                               64,
                                kernel_size=3,
-                               stride=(1, 2, 2),
+                               stride=(2, 2, 2),
                                padding=(1, 1, 1),
                                padding_mode='replicate')
 
-        self.conv3 = nn.Conv3d(16,
-                               16,
+        self.conv3 = nn.Conv3d(64,
+                               128,
                                kernel_size=3,
-                               stride=(1, 1, 1),
+                               stride=(2, 2, 2),
                                padding=(1, 1, 1),
                                padding_mode='replicate')
 
-        self.conv4 = nn.Conv3d(16,
-                               16,
+        self.conv4 = nn.Conv3d(128,
+                               256,
                                kernel_size=3,
-                               stride=(1, 2, 2),
+                               stride=(2, 2, 2),
                                padding=(1, 1, 1),
                                padding_mode='replicate')
-
-        self.conv5 = nn.Conv3d(16,
-                               16,
-                               kernel_size=3,
-                               stride=(1, 1, 1),
-                               padding=(1, 1, 1),
-                               padding_mode='replicate')
+        #
+        # self.conv5 = nn.Conv3d(16,
+        #                        16,
+        #                        kernel_size=3,
+        #                        stride=(1, 1, 1),
+        #                        padding=(1, 1, 1),
+        #                        padding_mode='replicate')
 
         # self.conv6 = nn.Conv3d(16,
         #                        1,
@@ -1427,9 +1427,9 @@ class PlaneParams(nn.Module):
         #                        padding=(1, 1, 1),
         #                        padding_mode='replicate')
 
-        self.conv6 = nn.Conv3d(16,
+        self.conv6 = nn.Conv3d(256,
                                2,
-                               kernel_size=(48, 4, 4))
+                               kernel_size=(6, 2, 2))
 
         self.values = None
 
@@ -1454,8 +1454,8 @@ class PlaneParams(nn.Module):
         x = self.relu(x)
         x = self.conv4(x)
         x = self.relu(x)
-        x = self.conv5(x)
-        x = self.relu(x)
+        # x = self.conv5(x)
+        # x = self.relu(x)
         x = self.conv6(x)
         x = x.view(-1, 2)
 
@@ -1523,7 +1523,7 @@ class PlaneParams(nn.Module):
         #             params_est[m] = cur_plane[0:2] / cur_plane[2]
         #
         #             # if (params_est[m] - target_support_pos[m]).norm() > 0.01:
-        #             if (params_est[m] - mrcnn_support_pos[m]).norm() > 0.05:
+        #             if (params_est[m] - mrcnn_support_pos[m]).norm() > 0.2:
         #                 cur_normal_tgt = torch.cat([target_support_pos[m], torch.tensor([1.0], device=cur_pts.device)], dim=-1)
         #                 inlier_mask_tgt, cur_plane_tgt = utils.fit_plane_dist_ransac_torch(cur_pts.transpose(0, 1),
         #                                                                  cur_normal_tgt,
